@@ -1,0 +1,6 @@
+{
+  "name": "s.s",
+  "description": "s.s — Mobile video editing studio with multi-track timeline, trim/split, speed curves, filters, stickers, text overlays, audio mixer, templates, and HD export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

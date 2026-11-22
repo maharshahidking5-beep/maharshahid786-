@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">s.s</string>
+    <string name="tagline_studio">Pro Mobile Video Studio</string>
+    <string name="nav_edit">Edit</string>
+    <string name="nav_templates">Templates</string>
+    <string name="nav_exports">Exports</string>
+    <string name="action_new_project">New project</string>
+    <string name="action_use_template">Use template</string>
+    <string name="action_export">Export</string>
+    <string name="projects_header">Projects</string>
+    <string name="empty_projects_title">No projects yet</string>
+    <string name="empty_projects_subtitle">Tap New project to import clips or start from a template.</string>
+</resources>

@@ -1,0 +1,274 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 60 &&
+             data.handle is string && data.handle.size() >= 2 && data.handle.size() <= 32 &&
+             (!('bio' in data) || (data.bio is string && data.bio.size() <= 200)) &&
+             (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 500)) &&
+             data.followersCount is int && data.followersCount >= 0 &&
+             data.followingCount is int && data.followingCount >= 0 &&
+             data.likesCount is int && data.likesCount >= 0 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidPrivateAccount(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.email is string && data.email.size() >= 3 && data.email.size() <= 160 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidCloudProject(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 100 &&
+             data.aspectLabel is string && data.aspectLabel.size() <= 24 &&
+             data.resolutionLabel is string && data.resolutionLabel.size() <= 32 &&
+             data.clipCount is int && data.clipCount >= 0 && data.clipCount <= 100 &&
+             data.totalDurationMs is int && data.totalDurationMs >= 0 &&
+             (!('filterLabel' in data) || (data.filterLabel is string && data.filterLabel.size() <= 40)) &&
+             data.projectJson is string && data.projectJson.size() >= 2 && data.projectJson.size() <= 300000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidCanvaDesign(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 100 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 40 &&
+             data.aspectLabel is string && data.aspectLabel.size() <= 24 &&
+             data.bgHex is int &&
+             data.accentHex is int &&
+             (!('headline' in data) || (data.headline is string && data.headline.size() <= 160)) &&
+             data.designJson is string && data.designJson.size() >= 2 && data.designJson.size() <= 250000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidSocialPost(data) {
+      return data.authorId is string && data.authorId.size() >= 1 && data.authorId.size() <= 128 &&
+             data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 60 &&
+             data.authorHandle is string && data.authorHandle.size() >= 2 && data.authorHandle.size() <= 32 &&
+             (!('authorAvatarUrl' in data) || (data.authorAvatarUrl is string && data.authorAvatarUrl.size() <= 500)) &&
+             data.caption is string && data.caption.size() >= 1 && data.caption.size() <= 300 &&
+             data.hashtags is list && data.hashtags.size() <= 8 &&
+             (data.hashtags.size() == 0 || data.hashtags[0] is string) &&
+             data.soundTitle is string && data.soundTitle.size() >= 1 && data.soundTitle.size() <= 80 &&
+             data.mediaType in ['VIDEO', 'PHOTO', 'CANVA_DESIGN', 'TEMPLATE_REEL'] &&
+             (!('mediaUrl' in data) || (data.mediaUrl is string && data.mediaUrl.size() <= 1000)) &&
+             (!('accentHex' in data) || data.accentHex is int) &&
+             (!('filterLabel' in data) || (data.filterLabel is string && data.filterLabel.size() <= 40)) &&
+             (!('templateId' in data) || (data.templateId is string && data.templateId.size() <= 64)) &&
+             data.visibility in ['PUBLIC', 'PRIVATE'] &&
+             data.likesCount is int && data.likesCount >= 0 &&
+             data.commentsCount is int && data.commentsCount >= 0 &&
+             data.sharesCount is int && data.sharesCount >= 0 &&
+             data.savesCount is int && data.savesCount >= 0 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidComment(data, postId) {
+      return data.postId is string && data.postId == postId &&
+             data.authorId is string && data.authorId == request.auth.uid &&
+             data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 60 &&
+             data.authorHandle is string && data.authorHandle.size() >= 2 && data.authorHandle.size() <= 32 &&
+             data.text is string && data.text.size() >= 1 && data.text.size() <= 300 &&
+             data.visibility == 'PUBLIC' &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidInteractionRef(data) {
+      return data.targetId is string && data.targetId.size() >= 1 && data.targetId.size() <= 128 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    // 1. Public Creator Profiles (no PII stored here)
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId);
+      allow list: if isSignedIn() && (resource.data.userId is string);
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'handle', 'followersCount', 'followingCount', 'likesCount', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'handle', 'bio', 'photoUrl', 'followersCount', 'followingCount', 'likesCount', 'createdAt', 'updatedAt']) &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt && (
+                         // Owner profile edit
+                         (isOwner(userId) &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'handle', 'bio', 'photoUrl', 'followingCount', 'updatedAt'])) ||
+                         // Follower / Like counter sync on follow or like
+                         (incoming().diff(existing()).affectedKeys().hasOnly(['followersCount', 'likesCount', 'updatedAt']) &&
+                          incoming().followersCount >= 0 &&
+                          incoming().likesCount >= 0)
+                       );
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      // Private PII (Gmail address) isolated to owner only
+      match /private/{docId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+                         isValidId(docId) &&
+                         incoming().keys().hasAll(['userId', 'email', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'email', 'createdAt', 'updatedAt']) &&
+                         isValidPrivateAccount(incoming());
+        allow update: if isOwner(userId) &&
+                         isValidId(docId) &&
+                         isValidPrivateAccount(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['email', 'updatedAt']);
+        allow delete: if isOwner(userId);
+      }
+
+      // Owner-only Cloud CapCut Pro Projects
+      match /cloudProjects/{projectId} {
+        allow get: if isOwner(userId) && isValidId(projectId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+                         isValidId(projectId) &&
+                         incoming().keys().hasAll(['userId', 'title', 'aspectLabel', 'resolutionLabel', 'clipCount', 'totalDurationMs', 'projectJson', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'title', 'aspectLabel', 'resolutionLabel', 'clipCount', 'totalDurationMs', 'filterLabel', 'projectJson', 'createdAt', 'updatedAt']) &&
+                         isValidCloudProject(incoming());
+        allow update: if isOwner(userId) &&
+                         isValidId(projectId) &&
+                         isValidCloudProject(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'aspectLabel', 'resolutionLabel', 'clipCount', 'totalDurationMs', 'filterLabel', 'projectJson', 'updatedAt']);
+        allow delete: if isOwner(userId) && isValidId(projectId);
+      }
+
+      // Owner-only Canva Pro Designs
+      match /designs/{designId} {
+        allow get: if isOwner(userId) && isValidId(designId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+                         isValidId(designId) &&
+                         incoming().keys().hasAll(['userId', 'title', 'category', 'aspectLabel', 'bgHex', 'accentHex', 'designJson', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'title', 'category', 'aspectLabel', 'bgHex', 'accentHex', 'headline', 'designJson', 'createdAt', 'updatedAt']) &&
+                         isValidCanvaDesign(incoming());
+        allow update: if isOwner(userId) &&
+                         isValidId(designId) &&
+                         isValidCanvaDesign(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'category', 'aspectLabel', 'bgHex', 'accentHex', 'headline', 'designJson', 'updatedAt']);
+        allow delete: if isOwner(userId) && isValidId(designId);
+      }
+
+      // Owner-only Like, Save, and Following tracking
+      match /likedPosts/{postId} {
+        allow get: if isOwner(userId) && isValidId(postId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+                         isValidId(postId) &&
+                         incoming().keys().hasAll(['targetId', 'createdAt']) &&
+                         incoming().keys().hasOnly(['targetId', 'createdAt']) &&
+                         isValidInteractionRef(incoming());
+        allow delete: if isOwner(userId) && isValidId(postId);
+      }
+
+      match /savedPosts/{postId} {
+        allow get: if isOwner(userId) && isValidId(postId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+                         isValidId(postId) &&
+                         incoming().keys().hasAll(['targetId', 'createdAt']) &&
+                         incoming().keys().hasOnly(['targetId', 'createdAt']) &&
+                         isValidInteractionRef(incoming());
+        allow delete: if isOwner(userId) && isValidId(postId);
+      }
+
+      match /following/{targetUserId} {
+        allow get: if isOwner(userId) && isValidId(targetUserId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+                         isValidId(targetUserId) &&
+                         incoming().keys().hasAll(['targetId', 'createdAt']) &&
+                         incoming().keys().hasOnly(['targetId', 'createdAt']) &&
+                         isValidInteractionRef(incoming());
+        allow delete: if isOwner(userId) && isValidId(targetUserId);
+      }
+    }
+
+    // 2. Online TikTok Short-Video & Canva Reel Feed
+    match /posts/{postId} {
+      allow get: if isSignedIn() && isValidId(postId) && (existing().visibility == 'PUBLIC' || existing().authorId == request.auth.uid);
+      allow list: if isSignedIn() && (resource.data.visibility == 'PUBLIC' || resource.data.authorId == request.auth.uid);
+
+      allow create: if isSignedIn() &&
+                       isValidId(postId) &&
+                       incoming().authorId == request.auth.uid &&
+                       incoming().keys().hasAll(['authorId', 'authorName', 'authorHandle', 'caption', 'hashtags', 'soundTitle', 'mediaType', 'visibility', 'likesCount', 'commentsCount', 'sharesCount', 'savesCount', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['authorId', 'authorName', 'authorHandle', 'authorAvatarUrl', 'caption', 'hashtags', 'soundTitle', 'mediaType', 'mediaUrl', 'accentHex', 'filterLabel', 'templateId', 'visibility', 'likesCount', 'commentsCount', 'sharesCount', 'savesCount', 'createdAt', 'updatedAt']) &&
+                       isValidSocialPost(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(postId) &&
+                       isValidSocialPost(incoming()) &&
+                       incoming().authorId == existing().authorId &&
+                       incoming().createdAt == existing().createdAt && (
+                         // Author editing own post caption / tags / visibility
+                         (existing().authorId == request.auth.uid &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['caption', 'hashtags', 'visibility', 'updatedAt'])) ||
+                         // Signed-in community engagement updates (likes, comments, shares, saves)
+                         (existing().visibility == 'PUBLIC' &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['likesCount', 'commentsCount', 'sharesCount', 'savesCount', 'updatedAt']))
+                       );
+
+      allow delete: if isSignedIn() && isValidId(postId) && existing().authorId == request.auth.uid;
+
+      // Comments subcollection on each post
+      match /comments/{commentId} {
+        allow get: if isSignedIn() && isValidId(postId) && isValidId(commentId) && existing().visibility == 'PUBLIC';
+        allow list: if isSignedIn() && isValidId(postId) && resource.data.visibility == 'PUBLIC';
+
+        allow create: if isSignedIn() &&
+                         isValidId(postId) &&
+                         isValidId(commentId) &&
+                         incoming().keys().hasAll(['postId', 'authorId', 'authorName', 'authorHandle', 'text', 'visibility', 'createdAt']) &&
+                         incoming().keys().hasOnly(['postId', 'authorId', 'authorName', 'authorHandle', 'text', 'visibility', 'createdAt']) &&
+                         isValidComment(incoming(), postId) &&
+                         exists(/databases/$(database)/documents/posts/$(postId));
+
+        allow delete: if isSignedIn() && isValidId(postId) && isValidId(commentId) && existing().authorId == request.auth.uid;
+      }
+    }
+  }
+}

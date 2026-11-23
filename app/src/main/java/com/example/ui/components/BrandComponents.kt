@@ -19,11 +19,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesomeMosaic
+import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.MovieCreation
-import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.outlined.AutoAwesomeMosaic
+import androidx.compose.material.icons.outlined.Brush
 import androidx.compose.material.icons.outlined.MovieCreation
-import androidx.compose.material.icons.outlined.VideoLibrary
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -44,6 +48,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -131,8 +136,8 @@ fun SsWordmarkBadge(modifier: Modifier = Modifier) {
             border = androidx.compose.foundation.BorderStroke(1.dp, ElectricCyan.copy(alpha = 0.4f))
         ) {
             Text(
-                text = "STUDIO",
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                text = "PRO",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.Bold),
                 color = ElectricCyan,
                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
             )
@@ -162,7 +167,7 @@ fun StudioBottomNavigation(
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -170,41 +175,51 @@ fun StudioBottomNavigation(
                     val selected = tab == currentTab
                     val icon = when (tab) {
                         MainNavTab.EDIT -> if (selected) Icons.Filled.MovieCreation else Icons.Outlined.MovieCreation
+                        MainNavTab.CANVA -> if (selected) Icons.Filled.Brush else Icons.Outlined.Brush
+                        MainNavTab.FEED -> if (selected) Icons.Filled.PlayCircle else Icons.Outlined.PlayCircle
                         MainNavTab.TEMPLATES -> if (selected) Icons.Filled.AutoAwesomeMosaic else Icons.Outlined.AutoAwesomeMosaic
-                        MainNavTab.EXPORTS -> if (selected) Icons.Filled.VideoLibrary else Icons.Outlined.VideoLibrary
+                        MainNavTab.PROFILE -> if (selected) Icons.Filled.Person else Icons.Outlined.Person
+                    }
+                    val accent = when (tab) {
+                        MainNavTab.FEED -> NeonRose
+                        MainNavTab.CANVA -> Color(0xFF8B5CF6)
+                        else -> ElectricCyan
                     }
                     Column(
                         modifier = Modifier
+                            .weight(1f)
                             .testTag("nav_tab_${tab.name.lowercase()}")
                             .minimumInteractiveComponentSize()
-                            .clip(RoundedCornerShape(14.dp))
+                            .clip(RoundedCornerShape(12.dp))
                             .clickable { onSelectTab(tab) }
-                            .padding(horizontal = 18.dp, vertical = 6.dp),
+                            .padding(horizontal = 2.dp, vertical = 5.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(10.dp))
                                 .background(
-                                    if (selected) ElectricCyan.copy(alpha = 0.16f)
+                                    if (selected) accent.copy(alpha = 0.16f)
                                     else Color.Transparent
                                 )
-                                .padding(horizontal = 14.dp, vertical = 4.dp),
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = icon,
                                 contentDescription = tab.label,
-                                tint = if (selected) ElectricCyan else TextMuted,
-                                modifier = Modifier.size(22.dp)
+                                tint = if (selected) accent else TextMuted,
+                                modifier = Modifier.size(21.dp)
                             )
                         }
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = tab.label,
-                            style = MaterialTheme.typography.labelMedium,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (selected) TextPrimary else TextMuted
+                            color = if (selected) TextPrimary else TextMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }

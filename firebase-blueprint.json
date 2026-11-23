@@ -1,0 +1,160 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Public creator profile for s.s Studio users authenticated via Google Sign-In.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID of the owner." },
+        "displayName": { "type": "string", "description": "Creator display name." },
+        "handle": { "type": "string", "description": "Public @handle for TikTok & Canva attribution." },
+        "bio": { "type": "string", "description": "Short creator bio." },
+        "photoUrl": { "type": "string", "description": "Creator avatar URL." },
+        "followersCount": { "type": "integer", "description": "Number of followers." },
+        "followingCount": { "type": "integer", "description": "Number of accounts followed." },
+        "likesCount": { "type": "integer", "description": "Total likes received across posts." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update." }
+      },
+      "required": ["userId", "displayName", "handle", "followersCount", "followingCount", "likesCount", "createdAt", "updatedAt"]
+    },
+    "UserPrivateAccount": {
+      "title": "UserPrivateAccount",
+      "description": "Owner-only PII record storing Gmail address and account sync timestamp.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner UID." },
+        "email": { "type": "string", "description": "Verified Google account email address." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update." }
+      },
+      "required": ["userId", "email", "createdAt", "updatedAt"]
+    },
+    "CloudProjectSummary": {
+      "title": "CloudProjectSummary",
+      "description": "Cloud-synced CapCut Pro project snapshot owned by a creator.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner UID." },
+        "title": { "type": "string", "description": "Project title." },
+        "aspectLabel": { "type": "string", "description": "Aspect ratio label e.g. 9:16." },
+        "resolutionLabel": { "type": "string", "description": "Export quality label." },
+        "clipCount": { "type": "integer", "description": "Number of timeline clips." },
+        "totalDurationMs": { "type": "integer", "description": "Duration in ms." },
+        "filterLabel": { "type": "string", "description": "Active filter label." },
+        "projectJson": { "type": "string", "description": "Serialized ProjectData snapshot for multi-device restore." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update." }
+      },
+      "required": ["userId", "title", "aspectLabel", "resolutionLabel", "clipCount", "totalDurationMs", "projectJson", "createdAt", "updatedAt"]
+    },
+    "CanvaDesign": {
+      "title": "CanvaDesign",
+      "description": "Cloud-synced Canva Pro graphic design owned by a creator.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner UID." },
+        "title": { "type": "string", "description": "Design title." },
+        "category": { "type": "string", "description": "Template category e.g. Poster, Thumbnail, Story." },
+        "aspectLabel": { "type": "string", "description": "Canvas aspect ratio label." },
+        "bgHex": { "type": "integer", "description": "Primary background ARGB color integer." },
+        "accentHex": { "type": "integer", "description": "Accent ARGB color integer." },
+        "headline": { "type": "string", "description": "Primary design headline preview." },
+        "designJson": { "type": "string", "description": "Serialized Canva canvas elements JSON." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update." }
+      },
+      "required": ["userId", "title", "category", "aspectLabel", "bgHex", "accentHex", "designJson", "createdAt", "updatedAt"]
+    },
+    "SocialVideoPost": {
+      "title": "SocialVideoPost",
+      "description": "Online TikTok short-video or Canva reel post in the s.s feed.",
+      "type": "object",
+      "properties": {
+        "authorId": { "type": "string", "description": "Author UID." },
+        "authorName": { "type": "string", "description": "Creator display name." },
+        "authorHandle": { "type": "string", "description": "Creator @handle." },
+        "authorAvatarUrl": { "type": "string", "description": "Creator avatar URL." },
+        "caption": { "type": "string", "description": "Video caption." },
+        "hashtags": { "type": "array", "description": "Up to 8 hashtag strings." },
+        "soundTitle": { "type": "string", "description": "Audio/sound title." },
+        "mediaType": { "type": "string", "enum": ["VIDEO", "PHOTO", "CANVA_DESIGN", "TEMPLATE_REEL"], "description": "Post media format." },
+        "mediaUrl": { "type": "string", "description": "Media URL or URI." },
+        "accentHex": { "type": "integer", "description": "Visual theme color." },
+        "filterLabel": { "type": "string", "description": "CapCut filter badge." },
+        "templateId": { "type": "string", "description": "Linked CapCut/Canva template ID for 1-tap remix." },
+        "visibility": { "type": "string", "enum": ["PUBLIC", "PRIVATE"], "description": "Feed visibility." },
+        "likesCount": { "type": "integer", "description": "Total likes." },
+        "commentsCount": { "type": "integer", "description": "Total comments." },
+        "sharesCount": { "type": "integer", "description": "Total shares." },
+        "savesCount": { "type": "integer", "description": "Total bookmarks." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update." }
+      },
+      "required": ["authorId", "authorName", "authorHandle", "caption", "hashtags", "soundTitle", "mediaType", "visibility", "likesCount", "commentsCount", "sharesCount", "savesCount", "createdAt", "updatedAt"]
+    },
+    "PostComment": {
+      "title": "PostComment",
+      "description": "Real-time TikTok video comment under a post.",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string", "description": "Parent post ID." },
+        "authorId": { "type": "string", "description": "Comment author UID." },
+        "authorName": { "type": "string", "description": "Comment author display name." },
+        "authorHandle": { "type": "string", "description": "Comment author @handle." },
+        "text": { "type": "string", "description": "Comment text body." },
+        "visibility": { "type": "string", "enum": ["PUBLIC"], "description": "Visibility aligned with public post feed." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp." }
+      },
+      "required": ["postId", "authorId", "authorName", "authorHandle", "text", "visibility", "createdAt"]
+    },
+    "UserInteractionRef": {
+      "title": "UserInteractionRef",
+      "description": "User-scoped marker doc for liked posts, saved posts, or followed creators.",
+      "type": "object",
+      "properties": {
+        "targetId": { "type": "string", "description": "ID of liked post, saved post, or followed creator." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp." }
+      },
+      "required": ["targetId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Public creator profiles indexed by UID."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserPrivateAccount" },
+      "description": "Private PII doc (email) accessible strictly to the owner."
+    },
+    "/users/{userId}/cloudProjects/{projectId}": {
+      "schema": { "$ref": "#/entities/CloudProjectSummary" },
+      "description": "Owner-only cloud-synced CapCut Pro projects."
+    },
+    "/users/{userId}/designs/{designId}": {
+      "schema": { "$ref": "#/entities/CanvaDesign" },
+      "description": "Owner-only cloud-synced Canva Pro graphic designs."
+    },
+    "/users/{userId}/likedPosts/{postId}": {
+      "schema": { "$ref": "#/entities/UserInteractionRef" },
+      "description": "Owner-only set of liked post IDs."
+    },
+    "/users/{userId}/savedPosts/{postId}": {
+      "schema": { "$ref": "#/entities/UserInteractionRef" },
+      "description": "Owner-only set of saved/bookmarked post IDs."
+    },
+    "/users/{userId}/following/{targetUserId}": {
+      "schema": { "$ref": "#/entities/UserInteractionRef" },
+      "description": "Owner-only set of followed creator UIDs."
+    },
+    "/posts/{postId}": {
+      "schema": { "$ref": "#/entities/SocialVideoPost" },
+      "description": "Online TikTok short-video & Canva reel posts."
+    },
+    "/posts/{postId}/comments/{commentId}": {
+      "schema": { "$ref": "#/entities/PostComment" },
+      "description": "Comments on a TikTok feed post."
+    }
+  }
+}

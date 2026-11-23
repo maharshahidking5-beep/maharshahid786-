@@ -1,6 +1,9 @@
 package com.example.ui.screens
 
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -21,26 +24,33 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.material.icons.filled.BatterySaver
+import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.FilterVintage
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Hd
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.VideoFile
+import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.outlined.MovieFilter
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -54,6 +64,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -78,12 +90,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.R
+import com.example.data.CloudSyncUiState
 import com.example.data.StudioPreferences
+import com.example.media.QuickPresetPack
+import com.example.media.WorkflowHelpersCatalog
 import com.example.model.EditorToolTab
 import com.example.model.ExportResolution
 import com.example.model.ProjectData
+import com.example.ui.components.CloudSyncSettingsCard
+import com.example.ui.components.CloudSyncStatusPill
 import com.example.ui.components.SsWordmarkBadge
 import com.example.ui.components.formatShortDuration
 import com.example.ui.theme.ElectricCyan
@@ -115,44 +133,84 @@ private data class QuickToolShortcut(
 fun HomeHubScreen(
     projects: List<ProjectData>,
     preferences: StudioPreferences,
+    cloudSyncState: CloudSyncUiState,
+    onSyncNow: () -> Unit,
     onPickNewProject: (autoCut: Boolean, initialTool: EditorToolTab) -> Unit,
     onLaunchDemoProject: (initialTool: EditorToolTab) -> Unit,
+    onLaunchQuickPresetPack: (QuickPresetPack) -> Unit,
     onOpenProject: (ProjectData) -> Unit,
     onRenameProject: (String, String) -> Unit,
     onDuplicateProject: (ProjectData) -> Unit,
     onDeleteProject: (String) -> Unit,
     onOpenExportsTab: () -> Unit,
-    onUpdatePreferences: (ExportResolution?, Int?, Boolean?) -> Unit,
+    onOpenSsAssistant: () -> Unit,
+    onOpenMiniGuides: () -> Unit,
+    onOpenBatchPhotoTool: () -> Unit,
+    onUpdatePreferences: (
+        defaultResolution: ExportResolution?,
+        defaultFps: Int?,
+        addWatermark: Boolean?,
+        autoSaveDrafts: Boolean?,
+        batterySaverMode: Boolean?,
+        autoSyncOnline: Boolean?,
+        appThemeMode: String?,
+        customBgUri: String?,
+        customBgBlur: Float?
+    ) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showSettingsSheet by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<ProjectData?>(null) }
 
-    val shortcuts = remember(projects) {
+    val wallpaperPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            onUpdatePreferences(null, null, null, null, null, null, "photo", uri.toString(), null)
+        }
+    }
+
+    val shortcuts = remember(projects, preferences.batterySaverMode) {
         listOf(
-            QuickToolShortcut("AutoCut", Icons.Filled.AutoAwesome, ElectricCyan) {
+            QuickToolShortcut("Effects", Icons.Filled.AutoFixHigh, ElectricCyan) {
+                onLaunchDemoProject(EditorToolTab.EFFECTS)
+            },
+            QuickToolShortcut("Voice FX", Icons.Filled.GraphicEq, NeonRose) {
+                onLaunchDemoProject(EditorToolTab.VOICE_FX)
+            },
+            QuickToolShortcut("Auto HD", Icons.Filled.Hd, StudioEmerald) {
+                onLaunchDemoProject(EditorToolTab.ADJUST)
+            },
+            QuickToolShortcut("AutoCut", Icons.Filled.ContentCut, StudioAmber) {
                 onPickNewProject(true, EditorToolTab.ROOT)
+            },
+            QuickToolShortcut("Batch Img", Icons.Filled.Collections, VioletPulse) {
+                onOpenBatchPhotoTool()
+            },
+            QuickToolShortcut("SS Help", Icons.Filled.AutoAwesome, ElectricCyan) {
+                onOpenSsAssistant()
+            },
+            QuickToolShortcut("Guides", Icons.AutoMirrored.Filled.HelpOutline, StudioAmber) {
+                onOpenMiniGuides()
+            },
+            QuickToolShortcut("Exports", Icons.Filled.VideoFile, TextPrimary) {
+                onOpenExportsTab()
             },
             QuickToolShortcut("Filters", Icons.Filled.FilterVintage, NeonRose) {
                 onLaunchDemoProject(EditorToolTab.FILTERS)
             },
-            QuickToolShortcut("Speed", Icons.Filled.Speed, StudioAmber) {
-                onLaunchDemoProject(EditorToolTab.EDIT_CLIP)
+            QuickToolShortcut("AI Lab", Icons.Filled.AutoAwesome, VioletPulse) {
+                onLaunchDemoProject(EditorToolTab.AI_LAB)
             },
-            QuickToolShortcut("Captions", Icons.Filled.Subtitles, VioletPulse) {
+            QuickToolShortcut("Urdu/HI", Icons.Filled.Subtitles, ElectricCyan) {
                 onLaunchDemoProject(EditorToolTab.TEXT)
             },
-            QuickToolShortcut("Ratio", Icons.Filled.AspectRatio, StudioEmerald) {
-                onLaunchDemoProject(EditorToolTab.RATIO)
-            },
-            QuickToolShortcut("Audio", Icons.Filled.MusicNote, ElectricCyan) {
-                onLaunchDemoProject(EditorToolTab.AUDIO)
-            },
-            QuickToolShortcut("Effects", Icons.Filled.AutoFixHigh, NeonRose) {
-                onLaunchDemoProject(EditorToolTab.EFFECTS)
-            },
-            QuickToolShortcut("Exports", Icons.Filled.VideoFile, TextPrimary) {
-                onOpenExportsTab()
+            QuickToolShortcut(
+                if (preferences.batterySaverMode) "Eco ON" else "Eco Mode",
+                Icons.Filled.BatterySaver,
+                StudioEmerald
+            ) {
+                onUpdatePreferences(null, null, null, null, !preferences.batterySaverMode, null, null, null, null)
             }
         )
     }
@@ -160,7 +218,7 @@ fun HomeHubScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(StudioBackground),
+            .background(if (preferences.appThemeMode == "photo") Color.Transparent else MaterialTheme.colorScheme.background),
         contentAlignment = Alignment.TopCenter
     ) {
         LazyColumn(
@@ -170,29 +228,69 @@ fun HomeHubScreen(
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
             item {
-                // Header Bar
+                // Header Bar with Cloud Sync Status Pill, Mini Guides, SS Assistant & Settings
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .statusBarsPadding()
-                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     SsWordmarkBadge()
-                    IconButton(
-                        onClick = { showSettingsSheet = true },
-                        modifier = Modifier
-                            .testTag("studio_settings_button")
-                            .minimumInteractiveComponentSize()
-                            .clip(CircleShape)
-                            .background(StudioSurfaceElevated)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Settings,
-                            contentDescription = "Studio settings",
-                            tint = TextPrimary
+                        CloudSyncStatusPill(
+                            syncState = cloudSyncState,
+                            onClick = { showSettingsSheet = true }
                         )
+                        IconButton(
+                            onClick = onOpenMiniGuides,
+                            modifier = Modifier
+                                .testTag("hub_mini_guides_button")
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(StudioSurfaceElevated)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.HelpOutline,
+                                contentDescription = "Mini editing guides",
+                                tint = TextPrimary,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = onOpenSsAssistant,
+                            modifier = Modifier
+                                .testTag("hub_ss_assistant_button")
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(ElectricCyan.copy(alpha = 0.16f))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.AutoAwesome,
+                                contentDescription = "Open SS Assistant",
+                                tint = ElectricCyan,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = { showSettingsSheet = true },
+                            modifier = Modifier
+                                .testTag("studio_settings_button")
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(StudioSurfaceElevated)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Settings,
+                                contentDescription = "Studio settings",
+                                tint = TextPrimary,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -238,7 +336,7 @@ fun HomeHubScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Multi-track timeline, color grading, speed & 4K export",
+                            text = "24+ CapCut effects, 1080P+ Auto HD, Gemini AI Lab & Voice FX",
                             style = MaterialTheme.typography.bodyMedium,
                             color = TextSecondary,
                             textAlign = TextAlign.Center
@@ -292,6 +390,76 @@ fun HomeHubScreen(
                                 text = "Try Studio Demo Reel",
                                 style = MaterialTheme.typography.labelLarge
                             )
+                        }
+                    }
+                }
+            }
+
+            item {
+                // One-Tap Quick Preset Packs (Vlog Ready, Wedding Glow, Gaming Punch, Product Ad)
+                Spacer(modifier = Modifier.height(18.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Quick Preset Packs",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = TextPrimary
+                    )
+                    Text(
+                        text = "One-tap grade",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = ElectricCyan
+                    )
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(WorkflowHelpersCatalog.quickPresetPacks, key = { it.id }) { pack ->
+                        Surface(
+                            modifier = Modifier
+                                .testTag("quick_preset_${pack.id}")
+                                .width(196.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable { onLaunchQuickPresetPack(pack) },
+                            color = StudioSurfaceElevated,
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, Color(pack.accentHex).copy(alpha = 0.55f))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Surface(
+                                    color = Color(pack.accentHex).copy(alpha = 0.18f),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text(
+                                        text = pack.badge,
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = Color(pack.accentHex),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                                Text(
+                                    text = pack.title,
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = pack.subtitle,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextSecondary,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
                 }
@@ -449,49 +617,136 @@ fun HomeHubScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 22.dp, vertical = 12.dp),
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Text(
-                    text = "s.s Studio Preferences",
+                    text = "s.s Studio Settings & Cloud Sync",
                     style = MaterialTheme.typography.titleLarge,
                     color = TextPrimary
                 )
 
+                CloudSyncSettingsCard(
+                    syncState = cloudSyncState,
+                    onSyncNow = onSyncNow,
+                    onToggleAutoSync = { enabled ->
+                        onUpdatePreferences(null, null, null, null, null, enabled, null, null, null)
+                    }
+                )
+
+                // Theme & Custom Photo Wallpaper
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Studio Theme & Wallpaper",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = TextSecondary
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("dark" to "Dark", "light" to "Light", "photo" to "Custom Photo").forEach { (modeKey, modeLabel) ->
+                            val selected = preferences.appThemeMode == modeKey
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("theme_mode_$modeKey")
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable {
+                                        if (modeKey == "photo" && preferences.customBgUri.isBlank()) {
+                                            wallpaperPicker.launch(
+                                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                            )
+                                        } else {
+                                            onUpdatePreferences(null, null, null, null, null, null, modeKey, null, null)
+                                        }
+                                    },
+                                color = if (selected) ElectricCyan.copy(alpha = 0.16f) else StudioSurfaceElevated,
+                                border = BorderStroke(1.dp, if (selected) ElectricCyan else StudioBorder),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(
+                                    text = modeLabel,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = if (selected) ElectricCyan else TextPrimary,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(vertical = 10.dp)
+                                )
+                            }
+                        }
+                    }
+                    if (preferences.appThemeMode == "photo") {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    wallpaperPicker.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                },
+                                border = BorderStroke(1.dp, ElectricCyan.copy(alpha = 0.6f))
+                            ) {
+                                Icon(Icons.Filled.Wallpaper, null, tint = ElectricCyan, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Change Photo", color = ElectricCyan)
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Blur: ${preferences.customBgBlur.toInt()}dp", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                                Slider(
+                                    value = preferences.customBgBlur,
+                                    onValueChange = {
+                                        onUpdatePreferences(null, null, null, null, null, null, null, null, it)
+                                    },
+                                    valueRange = 0f..12f,
+                                    colors = SliderDefaults.colors(thumbColor = ElectricCyan, activeTrackColor = ElectricCyan)
+                                )
+                            }
+                        }
+                    }
+                }
+
                 Text(
-                    text = "Default Export Resolution",
+                    text = "Default Export Resolution (360P – 4K)",
                     style = MaterialTheme.typography.labelLarge,
                     color = TextSecondary
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    ExportResolution.entries.forEach { res ->
-                        val selected = preferences.defaultResolution == res
-                        Surface(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable { onUpdatePreferences(res, null, null) },
-                            color = if (selected) ElectricCyan.copy(alpha = 0.16f) else StudioSurfaceElevated,
-                            border = BorderStroke(
-                                1.dp,
-                                if (selected) ElectricCyan else StudioBorder
-                            ),
-                            shape = RoundedCornerShape(12.dp)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ExportResolution.entries.chunked(3).forEach { rowRes ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Column(
-                                modifier = Modifier.padding(vertical = 10.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(
-                                    text = res.label,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = if (selected) ElectricCyan else TextPrimary
-                                )
-                                Text(
-                                    text = res.bitrateLabel,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = TextMuted
-                                )
+                            rowRes.forEach { res ->
+                                val selected = preferences.defaultResolution == res
+                                Surface(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable {
+                                            onUpdatePreferences(res, null, null, null, null, null, null, null, null)
+                                        },
+                                    color = if (selected) ElectricCyan.copy(alpha = 0.16f) else StudioSurfaceElevated,
+                                    border = BorderStroke(1.dp, if (selected) ElectricCyan else StudioBorder),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(vertical = 9.dp, horizontal = 4.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text(
+                                            text = res.label,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = if (selected) ElectricCyan else TextPrimary
+                                        )
+                                        Text(
+                                            text = res.bitrateLabel,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = TextMuted,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -509,12 +764,11 @@ fun HomeHubScreen(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(12.dp))
-                                .clickable { onUpdatePreferences(null, fpsOption, null) },
+                                .clickable {
+                                    onUpdatePreferences(null, fpsOption, null, null, null, null, null, null, null)
+                                },
                             color = if (selected) ElectricCyan.copy(alpha = 0.16f) else StudioSurfaceElevated,
-                            border = BorderStroke(
-                                1.dp,
-                                if (selected) ElectricCyan else StudioBorder
-                            ),
+                            border = BorderStroke(1.dp, if (selected) ElectricCyan else StudioBorder),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Text(
@@ -534,20 +788,45 @@ fun HomeHubScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Auto-save drafts",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = TextPrimary
-                        )
-                        Text(
-                            text = "Save every timeline change locally",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextSecondary
-                        )
+                        Text("Battery & Low-End Saver Mode", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                        Text("Reduces preview blur & frame overhead for smooth editing", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                    }
+                    Switch(
+                        checked = preferences.batterySaverMode,
+                        onCheckedChange = { onUpdatePreferences(null, null, null, null, it, null, null, null, null) },
+                        modifier = Modifier.testTag("settings_battery_saver_switch")
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Default s.s Watermark", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                        Text("Toggle clean export or s.s Studio corner mark", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                    }
+                    Switch(
+                        checked = preferences.addEndingWatermark,
+                        onCheckedChange = { onUpdatePreferences(null, null, it, null, null, null, null, null, null) },
+                        modifier = Modifier.testTag("settings_watermark_switch")
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Auto-save drafts", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                        Text("Save every timeline edit offline locally", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                     }
                     Switch(
                         checked = preferences.autoSaveDrafts,
-                        onCheckedChange = { onUpdatePreferences(null, null, it) }
+                        onCheckedChange = { onUpdatePreferences(null, null, null, it, null, null, null, null, null) },
+                        modifier = Modifier.testTag("settings_autosave_switch")
                     )
                 }
 
@@ -624,7 +903,7 @@ private fun DraftProjectRow(
                     .background(StudioSurfaceHighlight),
                 contentAlignment = Alignment.Center
             ) {
-                val thumbUri = project.clips.firstOrNull()?.uriString
+                val thumbUri = project.coverConfig.coverImageUri ?: project.clips.firstOrNull()?.uriString
                 if (thumbUri != null) {
                     AsyncImage(
                         model = Uri.parse(thumbUri),
@@ -638,6 +917,22 @@ private fun DraftProjectRow(
                         contentDescription = null,
                         tint = ElectricCyan
                     )
+                }
+                if (project.coverConfig.coverImageUri != null || project.coverConfig.coverTitle.isNotBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(3.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color(project.coverConfig.accentHex))
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            text = "COVER",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp, fontWeight = FontWeight.Bold),
+                            color = Color(0xFF041418)
+                        )
+                    }
                 }
                 Box(
                     modifier = Modifier

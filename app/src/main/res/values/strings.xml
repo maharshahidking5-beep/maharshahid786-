@@ -1,9 +1,12 @@
 <resources>
     <string name="app_name">s.s</string>
     <string name="tagline_studio">Pro Mobile Video Studio</string>
-    <string name="nav_edit">Edit</string>
+    <string name="nav_edit">Studio</string>
+    <string name="nav_canva">Canva Pro</string>
+    <string name="nav_feed">TikTok</string>
     <string name="nav_templates">Templates</string>
     <string name="nav_exports">Exports</string>
+    <string name="nav_profile">Profile</string>
     <string name="action_new_project">New project</string>
     <string name="action_use_template">Use template</string>
     <string name="action_export">Export</string>

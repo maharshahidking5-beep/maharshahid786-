@@ -1,5 +1,6 @@
 package com.example.ui.theme
 
+import androidx.annotation.FontRes
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
@@ -27,6 +28,59 @@ val JetBrainsMonoFamily = FontFamily(
     Font(R.font.jetbrains_mono, FontWeight.Medium),
     Font(R.font.jetbrains_mono, FontWeight.Bold),
 )
+
+val NotoNastaliqUrduFamily = FontFamily(
+    Font(R.font.noto_nastaliq_urdu, FontWeight.Normal),
+    Font(R.font.noto_nastaliq_urdu, FontWeight.Bold),
+)
+
+val NotoSansDevanagariFamily = FontFamily(
+    Font(R.font.noto_sans_devanagari, FontWeight.Normal),
+    Font(R.font.noto_sans_devanagari, FontWeight.Bold),
+)
+
+val PlayfairDisplayFamily = FontFamily(
+    Font(R.font.playfair_display, FontWeight.Normal),
+    Font(R.font.playfair_display, FontWeight.Bold),
+)
+
+val PacificoFamily = FontFamily(
+    Font(R.font.pacifico, FontWeight.Normal),
+)
+
+val BungeeFamily = FontFamily(
+    Font(R.font.bungee, FontWeight.Normal),
+)
+
+data class StudioFontOption(
+    val key: String,
+    val label: String,
+    val languageHint: String,
+    val fontFamily: FontFamily,
+    @FontRes val fontResId: Int
+)
+
+object StudioFontCatalog {
+    val options: List<StudioFontOption> = listOf(
+        StudioFontOption("display", "Studio Bold", "EN", SpaceGroteskFamily, R.font.space_grotesk),
+        StudioFontOption("nastaliq", "نستعلیق اردو", "UR", NotoNastaliqUrduFamily, R.font.noto_nastaliq_urdu),
+        StudioFontOption("hindi", "देवनागरी हिंदी", "HI", NotoSansDevanagariFamily, R.font.noto_sans_devanagari),
+        StudioFontOption("serif", "Calligraphy", "EN", PlayfairDisplayFamily, R.font.playfair_display),
+        StudioFontOption("script", "Brush Script", "EN", PacificoFamily, R.font.pacifico),
+        StudioFontOption("bold3d", "Poster 3D", "EN", BungeeFamily, R.font.bungee),
+        StudioFontOption("mono", "Tech Mono", "EN", JetBrainsMonoFamily, R.font.jetbrains_mono)
+    )
+
+    fun optionForKey(key: String): StudioFontOption {
+        return options.find { it.key == key } ?: options.first()
+    }
+
+    fun defaultKeyForLanguage(languageTag: String): String = when (languageTag.uppercase()) {
+        "UR" -> "nastaliq"
+        "HI" -> "hindi"
+        else -> "display"
+    }
+}
 
 val StudioTypography = Typography(
     displaySmall = TextStyle(

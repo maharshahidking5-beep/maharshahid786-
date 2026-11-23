@@ -13,6 +13,7 @@ import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.transformer.Composition
+import androidx.media3.transformer.DefaultEncoderFactory
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Effects
@@ -20,6 +21,7 @@ import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
+import androidx.media3.transformer.VideoEncoderSettings
 import com.example.data.ExportEntity
 import com.example.model.ProjectData
 import com.example.model.VideoClip
@@ -64,7 +66,7 @@ class VideoExportManager(private val context: Context) {
         val outputFile = File(exportDir, "${safeTitle}_${System.currentTimeMillis()}.mp4")
         val outputPath = outputFile.absolutePath
 
-        _exportState.value = ExportUiState.Exporting(2, "Preparing timeline tracks...")
+        _exportState.value = ExportUiState.Exporting(2, "Preparing ${project.resolution.label} pipeline...")
 
         val videoEditedItems = project.clips.map { clip ->
             val mediaItemBuilder = MediaItem.Builder().setUri(Uri.parse(clip.uriString))
@@ -87,8 +89,20 @@ class VideoExportManager(private val context: Context) {
                 context = context
             )
             val audioProcessors = mutableListOf<AudioProcessor>()
-            if (!clip.isPhoto && kotlin.math.abs(clip.speed - 1.0f) > 0.05f) {
-                audioProcessors.add(SonicAudioProcessor().apply { setSpeed(clip.speed) })
+            if (!clip.isPhoto) {
+                val hasSpeedOrPitch = kotlin.math.abs(clip.speed - 1.0f) > 0.05f ||
+                    kotlin.math.abs(project.voiceEnhance.pitchShift - 1.0f) > 0.02f
+                if (hasSpeedOrPitch) {
+                    audioProcessors.add(
+                        SonicAudioProcessor().apply {
+                            setSpeed(clip.speed)
+                            setPitch(project.voiceEnhance.pitchShift)
+                        }
+                    )
+                }
+                if (project.voiceEnhance.isActive) {
+                    audioProcessors.add(VoiceEnhancerAudioProcessor(project.voiceEnhance))
+                }
             }
 
             val builder = EditedMediaItem.Builder(mediaItem)
@@ -127,10 +141,34 @@ class VideoExportManager(private val context: Context) {
             sequences.add(EditedMediaItemSequence.Builder(listOf(editedAudio)).build())
         }
 
+        val firstSfx = project.sfxOverlays.firstOrNull()
+        if (firstSfx != null && firstSfx.volume > 0.02f) {
+            val sfxItem = MediaItem.fromUri(Uri.parse(firstSfx.uriString))
+            val editedSfx = EditedMediaItem.Builder(sfxItem)
+                .setRemoveVideo(true)
+                .setDurationUs(firstSfx.durationMs.coerceAtLeast(250L) * 1000L)
+                .build()
+            val sfxSeqBuilder = EditedMediaItemSequence.Builder()
+            if (firstSfx.startMs > 50L) {
+                sfxSeqBuilder.addGap(firstSfx.startMs * 1000L)
+            }
+            sfxSeqBuilder.addItem(editedSfx)
+            sequences.add(sfxSeqBuilder.build())
+        }
+
         val composition = Composition.Builder(sequences).build()
+
+        val encoderFactory = DefaultEncoderFactory.Builder(context)
+            .setRequestedVideoEncoderSettings(
+                VideoEncoderSettings.Builder()
+                    .setBitrate(project.resolution.targetBitrateBps)
+                    .build()
+            )
+            .build()
 
         val transformer = Transformer.Builder(context)
             .setVideoMimeType(MimeTypes.VIDEO_H264)
+            .setEncoderFactory(encoderFactory)
             .addListener(object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                     stopProgressPolling()
@@ -240,6 +278,32 @@ object MediaInspector {
         return@withContext try {
             retriever.setDataSource(context, Uri.parse(clip.uriString))
             retriever.getFrameAtTime(clip.trimStartMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+        } catch (_: Exception) {
+            null
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+
+    suspend fun extractFreezeFrameUri(
+        context: Context,
+        clip: VideoClip,
+        localVideoOffsetMs: Long
+    ): Uri? = withContext(Dispatchers.IO) {
+        if (clip.isPhoto) return@withContext Uri.parse(clip.uriString)
+        val retriever = MediaMetadataRetriever()
+        return@withContext try {
+            retriever.setDataSource(context, Uri.parse(clip.uriString))
+            val targetUs = (clip.trimStartMs + localVideoOffsetMs).coerceIn(0L, clip.totalDurationMs) * 1000L
+            val bmp = retriever.getFrameAtTime(targetUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: return@withContext null
+            val dir = File(context.filesDir, "freeze_frames").apply { mkdirs() }
+            val outFile = File(dir, "freeze_${System.currentTimeMillis()}.jpg")
+            java.io.FileOutputStream(outFile).use { stream ->
+                bmp.compress(Bitmap.CompressFormat.JPEG, 94, stream)
+            }
+            bmp.recycle()
+            Uri.fromFile(outFile)
         } catch (_: Exception) {
             null
         } finally {

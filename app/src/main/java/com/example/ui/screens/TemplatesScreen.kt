@@ -26,16 +26,21 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.FilterVintage
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -75,11 +80,20 @@ fun TemplatesScreen(
     modifier: Modifier = Modifier
 ) {
     var selectedCategory by remember { mutableStateOf("For You") }
+    var searchQuery by remember { mutableStateOf("") }
     var activeTemplateSheet by remember { mutableStateOf<TemplateItem?>(null) }
 
-    val filtered = remember(selectedCategory) {
-        if (selectedCategory == "For You") StudioCatalog.templates
+    val filtered = remember(selectedCategory, searchQuery) {
+        val catList = if (selectedCategory == "For You") StudioCatalog.templates
         else StudioCatalog.templates.filter { it.category.equals(selectedCategory, ignoreCase = true) }
+        val q = searchQuery.trim()
+        if (q.isEmpty()) catList
+        else catList.filter {
+            it.title.contains(q, ignoreCase = true) ||
+                it.category.contains(q, ignoreCase = true) ||
+                it.badgeTag.contains(q, ignoreCase = true) ||
+                it.filterPreset.label.contains(q, ignoreCase = true)
+        }
     }
 
     Column(
@@ -102,7 +116,7 @@ fun TemplatesScreen(
                     color = TextPrimary
                 )
                 Text(
-                    text = "One-tap beat sync, filters & animated titles",
+                    text = "Readymade 1080P+ reels, beat sync & voice presets",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary
                 )
@@ -132,6 +146,38 @@ fun TemplatesScreen(
             }
         }
 
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            placeholder = { Text("Search templates, reels, beat sync...", color = TextMuted) },
+            leadingIcon = {
+                Icon(Icons.Filled.Search, contentDescription = null, tint = TextSecondary)
+            },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { searchQuery = "" }) {
+                        Icon(Icons.Filled.Clear, contentDescription = "Clear search", tint = TextSecondary)
+                    }
+                }
+            },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = ElectricCyan,
+                unfocusedBorderColor = StudioBorder,
+                focusedContainerColor = StudioSurfaceElevated,
+                unfocusedContainerColor = StudioSurfaceElevated,
+                focusedTextColor = TextPrimary,
+                unfocusedTextColor = TextPrimary
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .testTag("templates_search_input")
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
         LazyRow(
             contentPadding = PaddingValues(horizontal = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -159,18 +205,33 @@ fun TemplatesScreen(
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 164.dp),
-            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            items(filtered, key = { it.id }) { template ->
-                TemplateCard(
-                    template = template,
-                    onClick = { activeTemplateSheet = template }
+        if (filtered.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "No templates match \"$searchQuery\"",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = TextSecondary
                 )
+            }
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 164.dp),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                items(filtered, key = { it.id }) { template ->
+                    TemplateCard(
+                        template = template,
+                        onClick = { activeTemplateSheet = template }
+                    )
+                }
             }
         }
     }
@@ -191,6 +252,13 @@ fun TemplatesScreen(
                     style = MaterialTheme.typography.titleLarge,
                     color = TextPrimary
                 )
+                if (template.secondaryCaption.isNotBlank()) {
+                    Text(
+                        text = "${template.badgeTag} · \"${template.defaultCaption}\" -> \"${template.secondaryCaption}\"",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary
+                    )
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Surface(color = StudioSurfaceElevated, shape = RoundedCornerShape(8.dp)) {
                         Text(
@@ -332,6 +400,23 @@ private fun TemplateCard(
                         color = Color.White,
                         modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
                     )
+                }
+
+                if (template.badgeTag.isNotBlank()) {
+                    Surface(
+                        color = NeonRose.copy(alpha = 0.88f),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(10.dp)
+                    ) {
+                        Text(
+                            text = template.badgeTag,
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
                 }
 
                 Column(

@@ -7,6 +7,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,16 +32,18 @@ import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesomeMotion
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Title
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -49,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -61,8 +66,10 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.media.AudioSynthLibrary
 import com.example.media.MediaInspector
-import com.example.model.EditorToolTab
+import com.example.model.ClipAnimationType
 import com.example.model.ProjectData
+import com.example.model.StickerOverlayItem
+import com.example.model.TextOverlayItem
 import com.example.model.TransitionType
 import com.example.model.VideoClip
 import com.example.ui.components.AudioWaveformStrip
@@ -94,7 +101,12 @@ fun EditorTimeline(
     onSelectClip: (String?) -> Unit,
     onSelectText: (String) -> Unit,
     onSelectSticker: (String) -> Unit,
+    onUpdateClipTrim: (String, Long, Long) -> Unit,
+    onMoveClip: (String, Int) -> Unit,
+    onUpdateTextTiming: (TextOverlayItem) -> Unit,
+    onUpdateStickerTiming: (StickerOverlayItem) -> Unit,
     onAddClipClick: () -> Unit,
+    onOpenCoverSheet: () -> Unit,
     onOpenTransitionPicker: (VideoClip) -> Unit,
     onToggleOriginalMute: () -> Unit,
     onOpenAudioTool: () -> Unit,
@@ -145,42 +157,118 @@ fun EditorTimeline(
                     modifier = Modifier.fillMaxHeight(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // 1. Time Ruler
-                    Row(
+                    // 1. Time Ruler + User Markers ("Marks")
+                    Box(
                         modifier = Modifier
                             .width(trackWidthDp + 80.dp)
-                            .height(22.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .height(22.dp)
                     ) {
-                        for (sec in 0..totalSec) {
-                            Box(
-                                modifier = Modifier.width(DP_PER_SECOND),
-                                contentAlignment = Alignment.CenterStart
-                            ) {
-                                Text(
-                                    text = if (sec % 2 == 0) "${sec}s" else "·",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (sec % 2 == 0) TextMuted else StudioBorder
-                                )
+                        Row(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            for (sec in 0..totalSec) {
+                                Box(
+                                    modifier = Modifier.width(DP_PER_SECOND),
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
+                                    Text(
+                                        text = if (sec % 2 == 0) "${sec}s" else "·",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (sec % 2 == 0) TextMuted else StudioBorder
+                                    )
+                                }
                             }
+                        }
+
+                        project.markers.forEach { marker ->
+                            val markerOffsetDp = DP_PER_SECOND * (marker.timeMs / 1000f)
+                            Icon(
+                                imageVector = Icons.Filled.Bookmark,
+                                contentDescription = marker.label,
+                                tint = Color(marker.colorHex),
+                                modifier = Modifier
+                                    .offset(x = markerOffsetDp - 7.dp, y = 2.dp)
+                                    .size(16.dp)
+                                    .clickable { onSeekMs(marker.timeMs) }
+                            )
                         }
                     }
 
-                    // 2. Main Video Track
+                    // 2. Main Video Track with CapCut Pro "Cover" Slot at start + Draggable Trim & Long-Press Reorder
                     Row(
                         modifier = Modifier.height(58.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        // Video Cover Card pinned before first clip (exact CapCut Pro UX)
+                        val coverPreviewUri = project.coverConfig.coverImageUri
+                            ?: project.clips.firstOrNull()?.uriString
+                        Surface(
+                            modifier = Modifier
+                                .testTag("timeline_cover_slot")
+                                .width(44.dp)
+                                .fillMaxHeight()
+                                .padding(end = 6.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable(onClick = onOpenCoverSheet),
+                            color = StudioSurfaceElevated,
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, ElectricCyan.copy(alpha = 0.65f))
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                if (coverPreviewUri != null && project.coverConfig.coverImageUri != null) {
+                                    AsyncImage(
+                                        model = Uri.parse(coverPreviewUri),
+                                        contentDescription = "Video cover",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Color.Black.copy(alpha = 0.45f))
+                                    )
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(
+                                        Icons.Filled.PhotoCamera,
+                                        contentDescription = "Set Cover",
+                                        tint = ElectricCyan,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text(
+                                        text = "Cover",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold
+                                        ),
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+
                         project.clips.forEachIndexed { idx, clip ->
                             val clipWidthDp = (DP_PER_SECOND * (clip.effectiveDurationMs / 1000f))
-                                .coerceAtLeast(48.dp)
+                                .coerceAtLeast(52.dp)
                             val isSelected = clip.id == selectedClipId
 
                             TimelineClipCell(
                                 clip = clip,
                                 widthDp = clipWidthDp,
                                 isSelected = isSelected,
-                                onClick = { onSelectClip(if (isSelected) null else clip.id) }
+                                pxPerMs = pxPerMs,
+                                onClick = { onSelectClip(if (isSelected) null else clip.id) },
+                                onDragTrim = { startDeltaMs, endDeltaMs ->
+                                    onUpdateClipTrim(
+                                        clip.id,
+                                        clip.trimStartMs + startDeltaMs,
+                                        clip.trimEndMs + endDeltaMs
+                                    )
+                                },
+                                onLongDragSwap = { dir ->
+                                    onMoveClip(clip.id, dir)
+                                }
                             )
 
                             if (idx < project.clips.lastIndex) {
@@ -227,8 +315,9 @@ fun EditorTimeline(
                         }
                     }
 
-                    // 3. Text & Sticker Track
+                    // 3. Draggable Text & Sticker Track
                     if (project.textOverlays.isNotEmpty() || project.stickerOverlays.isNotEmpty()) {
+                        val totalDur = project.totalDurationMs.coerceAtLeast(3000L)
                         Box(
                             modifier = Modifier
                                 .width(trackWidthDp)
@@ -237,7 +326,7 @@ fun EditorTimeline(
                             project.textOverlays.forEach { textItem ->
                                 val offsetDp = DP_PER_SECOND * (textItem.startMs / 1000f)
                                 val segWidthDp = (DP_PER_SECOND * ((textItem.endMs - textItem.startMs) / 1000f))
-                                    .coerceAtLeast(48.dp)
+                                    .coerceAtLeast(52.dp)
                                 val selected = textItem.id == selectedTextId
                                 Surface(
                                     modifier = Modifier
@@ -245,7 +334,16 @@ fun EditorTimeline(
                                         .width(segWidthDp)
                                         .fillMaxHeight()
                                         .clip(RoundedCornerShape(6.dp))
-                                        .clickable { onSelectText(textItem.id) },
+                                        .clickable { onSelectText(textItem.id) }
+                                        .pointerInput(textItem.id, pxPerMs, totalDur) {
+                                            detectHorizontalDragGestures { change, dragAmount ->
+                                                change.consume()
+                                                val deltaMs = (dragAmount / pxPerMs).toLong()
+                                                val dur = (textItem.endMs - textItem.startMs).coerceAtLeast(500L)
+                                                val newStart = (textItem.startMs + deltaMs).coerceIn(0L, (totalDur - dur).coerceAtLeast(0L))
+                                                onUpdateTextTiming(textItem.copy(startMs = newStart, endMs = newStart + dur))
+                                            }
+                                        },
                                     color = if (selected) NeonRose else NeonRose.copy(alpha = 0.35f),
                                     shape = RoundedCornerShape(6.dp),
                                     border = if (selected) BorderStroke(1.5.dp, Color.White) else null
@@ -275,7 +373,7 @@ fun EditorTimeline(
                             project.stickerOverlays.forEach { sticker ->
                                 val offsetDp = DP_PER_SECOND * (sticker.startMs / 1000f)
                                 val segWidthDp = (DP_PER_SECOND * ((sticker.endMs - sticker.startMs) / 1000f))
-                                    .coerceAtLeast(48.dp)
+                                    .coerceAtLeast(52.dp)
                                 val selected = sticker.id == selectedStickerId
                                 Surface(
                                     modifier = Modifier
@@ -283,7 +381,16 @@ fun EditorTimeline(
                                         .width(segWidthDp)
                                         .fillMaxHeight()
                                         .clip(RoundedCornerShape(6.dp))
-                                        .clickable { onSelectSticker(sticker.id) },
+                                        .clickable { onSelectSticker(sticker.id) }
+                                        .pointerInput(sticker.id, pxPerMs, totalDur) {
+                                            detectHorizontalDragGestures { change, dragAmount ->
+                                                change.consume()
+                                                val deltaMs = (dragAmount / pxPerMs).toLong()
+                                                val dur = (sticker.endMs - sticker.startMs).coerceAtLeast(500L)
+                                                val newStart = (sticker.startMs + deltaMs).coerceIn(0L, (totalDur - dur).coerceAtLeast(0L))
+                                                onUpdateStickerTiming(sticker.copy(startMs = newStart, endMs = newStart + dur))
+                                            }
+                                        },
                                     color = if (selected) StudioAmber else StudioAmber.copy(alpha = 0.38f),
                                     shape = RoundedCornerShape(6.dp),
                                     border = if (selected) BorderStroke(1.5.dp, Color.White) else null
@@ -305,50 +412,72 @@ fun EditorTimeline(
                         }
                     }
 
-                    // 4. Audio Track
+                    // 4. Audio Track with Golden Beat Sync Markers
                     val track = project.audioTrack
                     if (track != null) {
-                        val presetWaveform = remember(track.id) {
-                            AudioSynthLibrary.presets.find { it.id == track.id }?.waveform
-                                ?: List(36) { idx -> if (idx % 2 == 0) 0.72f else 0.42f }
+                        val presetMeta = remember(track.id) {
+                            AudioSynthLibrary.presets.find { it.id == track.id }
                         }
-                        Surface(
+                        val presetWaveform = presetMeta?.waveform
+                            ?: List(36) { idx -> if (idx % 2 == 0) 0.72f else 0.42f }
+                        val bpm = presetMeta?.bpm ?: 120
+                        val beatIntervalMs = (60_000L / bpm.coerceAtLeast(60)).coerceAtLeast(350L)
+
+                        Box(
                             modifier = Modifier
                                 .width(trackWidthDp.coerceAtLeast(160.dp))
                                 .height(32.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable(onClick = onOpenAudioTool),
-                            color = ElectricCyan.copy(alpha = 0.14f),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, ElectricCyan.copy(alpha = 0.45f))
                         ) {
-                            Row(
+                            Surface(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(horizontal = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable(onClick = onOpenAudioTool),
+                                color = ElectricCyan.copy(alpha = 0.14f),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, ElectricCyan.copy(alpha = 0.45f))
                             ) {
-                                Icon(
-                                    imageVector = Icons.Filled.MusicNote,
-                                    contentDescription = null,
-                                    tint = ElectricCyan,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = if (track.isMuted) "${track.title} (Muted)" else track.title,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = TextPrimary,
-                                    maxLines = 1
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                AudioWaveformStrip(
-                                    waveform = presetWaveform,
-                                    barColor = if (track.isMuted) TextMuted else ElectricCyan.copy(alpha = 0.8f),
+                                Row(
                                     modifier = Modifier
-                                        .weight(1f)
-                                        .height(20.dp)
+                                        .fillMaxSize()
+                                        .padding(horizontal = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.MusicNote,
+                                        contentDescription = null,
+                                        tint = ElectricCyan,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (track.isMuted) "${track.title} (Muted)" else track.title,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = TextPrimary,
+                                        maxLines = 1
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    AudioWaveformStrip(
+                                        waveform = presetWaveform,
+                                        barColor = if (track.isMuted) TextMuted else ElectricCyan.copy(alpha = 0.8f),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(20.dp)
+                                    )
+                                }
+                            }
+                            val totalAudioMs = project.totalDurationMs.coerceAtLeast(2000L)
+                            var beatCursor = beatIntervalMs
+                            while (beatCursor < totalAudioMs) {
+                                val beatOffsetDp = DP_PER_SECOND * (beatCursor / 1000f)
+                                Box(
+                                    modifier = Modifier
+                                        .offset(x = beatOffsetDp, y = 26.dp)
+                                        .size(4.dp)
+                                        .clip(CircleShape)
+                                        .background(StudioAmber)
                                 )
+                                beatCursor += beatIntervalMs
                             }
                         }
                     } else {
@@ -378,6 +507,36 @@ fun EditorTimeline(
                                     style = MaterialTheme.typography.labelMedium,
                                     color = TextSecondary
                                 )
+                            }
+                        }
+                    }
+
+                    // 5. SFX Lane (Sound FX added at playhead)
+                    if (project.sfxOverlays.isNotEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .width(trackWidthDp.coerceAtLeast(160.dp))
+                                .height(22.dp)
+                        ) {
+                            project.sfxOverlays.forEach { sfx ->
+                                val offsetDp = DP_PER_SECOND * (sfx.startMs / 1000f)
+                                Surface(
+                                    modifier = Modifier
+                                        .offset(x = offsetDp)
+                                        .height(20.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .clickable(onClick = onOpenAudioTool),
+                                    color = NeonRose.copy(alpha = 0.25f),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = BorderStroke(1.dp, NeonRose.copy(alpha = 0.65f))
+                                ) {
+                                    Text(
+                                        text = "♪ ${sfx.title}",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                        color = Color.White,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -444,12 +603,16 @@ private fun TimelineClipCell(
     clip: VideoClip,
     widthDp: Dp,
     isSelected: Boolean,
-    onClick: () -> Unit
+    pxPerMs: Float,
+    onClick: () -> Unit,
+    onDragTrim: (startDeltaMs: Long, endDeltaMs: Long) -> Unit,
+    onLongDragSwap: (delta: Int) -> Unit
 ) {
     val context = LocalContext.current
     val videoThumb by produceState<Bitmap?>(initialValue = null, clip.id, clip.trimStartMs) {
         value = if (!clip.isPhoto) MediaInspector.extractThumbnail(context, clip) else null
     }
+    var dragReorderAccum by remember { mutableFloatStateOf(0f) }
 
     Box(
         modifier = Modifier
@@ -464,6 +627,23 @@ private fun TimelineClipCell(
                 shape = RoundedCornerShape(8.dp)
             )
             .clickable(onClick = onClick)
+            .pointerInput(clip.id) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { dragReorderAccum = 0f },
+                    onDragEnd = { dragReorderAccum = 0f },
+                    onDragCancel = { dragReorderAccum = 0f }
+                ) { change, dragAmount ->
+                    change.consume()
+                    dragReorderAccum += dragAmount.x
+                    if (dragReorderAccum > 90f) {
+                        onLongDragSwap(1)
+                        dragReorderAccum = 0f
+                    } else if (dragReorderAccum < -90f) {
+                        onLongDragSwap(-1)
+                        dragReorderAccum = 0f
+                    }
+                }
+            }
     ) {
         if (clip.isPhoto) {
             AsyncImage(
@@ -481,7 +661,6 @@ private fun TimelineClipCell(
             )
         }
 
-        // Subtle scrim for legibility
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -489,27 +668,42 @@ private fun TimelineClipCell(
         )
 
         if (isSelected) {
-            // Left and right CapCut-style white trim handle bars
+            // Interactive Draggable Left Trim Handle
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterStart)
-                    .width(6.dp)
+                    .width(12.dp)
                     .fillMaxHeight()
                     .background(Color.White)
+                    .pointerInput(clip.id, pxPerMs) {
+                        detectHorizontalDragGestures { change, dragAmount ->
+                            change.consume()
+                            val deltaMs = (dragAmount / pxPerMs).toLong()
+                            onDragTrim(deltaMs, 0L)
+                        }
+                    }
             )
+            // Interactive Draggable Right Trim Handle
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
-                    .width(6.dp)
+                    .width(12.dp)
                     .fillMaxHeight()
                     .background(Color.White)
+                    .pointerInput(clip.id, pxPerMs) {
+                        detectHorizontalDragGestures { change, dragAmount ->
+                            change.consume()
+                            val deltaMs = (dragAmount / pxPerMs).toLong()
+                            onDragTrim(0L, deltaMs)
+                        }
+                    }
             )
         }
 
         Row(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(horizontal = 8.dp, vertical = 4.dp),
+                .padding(horizontal = 14.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -533,6 +727,38 @@ private fun TimelineClipCell(
                         text = "${String.format("%.1f", clip.speed)}x",
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = Color(0xFF041418),
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
+                }
+            }
+            if (clip.animation != ClipAnimationType.NONE) {
+                Surface(
+                    color = VioletPulse.copy(alpha = 0.9f),
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Text(
+                        text = "ANI",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
+                }
+            }
+            if (clip.keyframes.isNotEmpty()) {
+                Surface(
+                    color = StudioAmber.copy(alpha = 0.92f),
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Text(
+                        text = "◆${clip.keyframes.size}",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 8.sp,
                             fontWeight = FontWeight.Bold
                         ),
                         color = Color(0xFF041418),

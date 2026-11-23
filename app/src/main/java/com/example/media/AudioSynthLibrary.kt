@@ -3,9 +3,9 @@ package com.example.media
 import android.content.Context
 import android.net.Uri
 import com.example.model.AudioTrackItem
+import com.example.model.SfxOverlayItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
@@ -13,6 +13,7 @@ import java.nio.ByteOrder
 import kotlin.math.PI
 import kotlin.math.exp
 import kotlin.math.sin
+import kotlin.random.Random
 
 data class StudioMusicPreset(
     val id: String,
@@ -22,6 +23,13 @@ data class StudioMusicPreset(
     val bpm: Int,
     val durationMs: Long,
     val waveform: List<Float>
+)
+
+data class SfxPreset(
+    val id: String,
+    val title: String,
+    val category: String,
+    val durationMs: Long
 )
 
 object AudioSynthLibrary {
@@ -84,7 +92,40 @@ object AudioSynthLibrary {
             waveform = List(48) { idx ->
                 (0.35f + 0.45f * kotlin.math.abs(sin(idx * 0.45f))).coerceIn(0.2f, 0.9f)
             }
+        ),
+        StudioMusicPreset(
+            id = "midnight_drill",
+            title = "Midnight 808",
+            artist = "s.s Bass",
+            genre = "Club / Edit",
+            bpm = 136,
+            durationMs = 12000L,
+            waveform = List(48) { idx ->
+                if (idx % 4 == 0) 1.0f else if (idx % 4 == 2) 0.78f else 0.28f
+            }
+        ),
+        StudioMusicPreset(
+            id = "cinematic_strings",
+            title = "Golden Strings",
+            artist = "s.s Orchestra",
+            genre = "Travel / Story",
+            bpm = 90,
+            durationMs = 12000L,
+            waveform = List(48) { idx ->
+                (0.30f + 0.50f * kotlin.math.abs(sin(idx * 0.22f))).coerceIn(0.2f, 0.92f)
+            }
         )
+    )
+
+    val sfxPresets: List<SfxPreset> = listOf(
+        SfxPreset("sfx_whoosh", "Whoosh", "Transition", 750L),
+        SfxPreset("sfx_bass_drop", "Bass Drop", "Beat", 1100L),
+        SfxPreset("sfx_shutter", "Camera Snap", "Photo", 350L),
+        SfxPreset("sfx_pop_ding", "Pop Ding", "UI / Text", 450L),
+        SfxPreset("sfx_glitch_zap", "Glitch Zap", "Cyber", 650L),
+        SfxPreset("sfx_riser", "Riser Swell", "Build", 1400L),
+        SfxPreset("sfx_sparkle", "Magic Chime", "Light", 900L),
+        SfxPreset("sfx_boom", "Cinema Boom", "Impact", 1200L)
     )
 
     suspend fun ensureTrackFile(context: Context, presetId: String): AudioTrackItem =
@@ -105,6 +146,24 @@ object AudioSynthLibrary {
             )
         }
 
+    suspend fun ensureSfxFile(context: Context, sfxId: String, startMs: Long): SfxOverlayItem =
+        withContext(Dispatchers.IO) {
+            val preset = sfxPresets.find { it.id == sfxId } ?: sfxPresets.first()
+            val dir = File(context.filesDir, "sfx").apply { mkdirs() }
+            val wavFile = File(dir, "${preset.id}.wav")
+            if (!wavFile.exists() || wavFile.length() < 512L) {
+                writeSynthesizedSfxWav(wavFile, preset)
+            }
+            SfxOverlayItem(
+                sfxId = preset.id,
+                title = preset.title,
+                uriString = Uri.fromFile(wavFile).toString(),
+                startMs = startMs.coerceAtLeast(0L),
+                durationMs = preset.durationMs,
+                volume = 0.95f
+            )
+        }
+
     private fun writeSynthesizedWav(file: File, preset: StudioMusicPreset) {
         val sampleRate = 22050
         val durationSec = (preset.durationMs / 1000.0).coerceAtLeast(4.0)
@@ -113,7 +172,7 @@ object AudioSynthLibrary {
         val beatDurationSec = 60.0 / preset.bpm
 
         val chords = when (preset.id) {
-            "neon_pulse" -> listOf(
+            "neon_pulse", "midnight_drill" -> listOf(
                 doubleArrayOf(110.0, 164.81, 220.0, 261.63),
                 doubleArrayOf(98.0, 146.83, 196.0, 246.94),
                 doubleArrayOf(87.31, 130.81, 174.61, 220.0),
@@ -125,7 +184,7 @@ object AudioSynthLibrary {
                 doubleArrayOf(174.61, 220.0, 261.63, 349.23),
                 doubleArrayOf(196.0, 246.94, 293.66, 392.0)
             )
-            "cinema_rise" -> listOf(
+            "cinema_rise", "cinematic_strings" -> listOf(
                 doubleArrayOf(130.81, 196.0, 261.63, 311.13),
                 doubleArrayOf(116.54, 174.61, 233.08, 293.66),
                 doubleArrayOf(103.83, 155.56, 207.65, 261.63),
@@ -151,17 +210,15 @@ object AudioSynthLibrary {
             val barIdx = ((t / (beatDurationSec * 4)).toInt()) % chords.size
             val chord = chords[barIdx]
 
-            // Kick drum envelope on every beat
             val kickEnv = exp(-beatPos * 9.0)
             val kickFreq = 52.0 + 95.0 * exp(-beatPos * 18.0)
             val kick = sin(2.0 * PI * kickFreq * t) * kickEnv * 0.45
 
-            // Musical chord pad / pluck
             var harmony = 0.0
             for (nIdx in chord.indices) {
                 val note = chord[nIdx]
                 val arpPhase = ((t * 2.0 + nIdx * 0.25) % 1.0)
-                val pluck = if (preset.id == "morning_acoustic" || preset.id == "neon_pulse") {
+                val pluck = if (preset.id == "morning_acoustic" || preset.id == "neon_pulse" || preset.id == "midnight_drill") {
                     exp(-arpPhase * 4.5) * 0.22
                 } else {
                     0.13
@@ -169,7 +226,6 @@ object AudioSynthLibrary {
                 harmony += sin(2.0 * PI * note * t) * pluck
             }
 
-            // Smooth fade-in and fade-out at edges
             val edgeEnv = when {
                 t < 0.15 -> t / 0.15
                 t > durationSec - 0.25 -> ((durationSec - t) / 0.25).coerceAtLeast(0.0)
@@ -177,6 +233,79 @@ object AudioSynthLibrary {
             }
 
             val sampleVal = ((kick + harmony) * edgeEnv * 0.72).coerceIn(-0.98, 0.98)
+            val pcm16 = (sampleVal * Short.MAX_VALUE).toInt().toShort()
+            pcmBytes[i * 2] = (pcm16.toInt() and 0xFF).toByte()
+            pcmBytes[i * 2 + 1] = ((pcm16.toInt() shr 8) and 0xFF).toByte()
+        }
+
+        val header = createWavHeader(pcmBytes.size, sampleRate, 1, 16)
+        FileOutputStream(file).use { out ->
+            out.write(header)
+            out.write(pcmBytes)
+        }
+    }
+
+    private fun writeSynthesizedSfxWav(file: File, preset: SfxPreset) {
+        val sampleRate = 22050
+        val durationSec = (preset.durationMs / 1000.0).coerceAtLeast(0.25)
+        val totalSamples = (sampleRate * durationSec).toInt()
+        val pcmBytes = ByteArray(totalSamples * 2)
+        val rng = Random(preset.id.hashCode())
+        var smoothNoise = 0.0
+
+        for (i in 0 until totalSamples) {
+            val t = i.toDouble() / sampleRate
+            val norm = (i.toDouble() / totalSamples).coerceIn(0.0, 1.0)
+            val rawNoise = rng.nextDouble(-1.0, 1.0)
+            smoothNoise += 0.25 * (rawNoise - smoothNoise)
+
+            val sampleVal = when (preset.id) {
+                "sfx_whoosh" -> {
+                    val env = sin(PI * norm)
+                    val sweep = sin(2.0 * PI * (180.0 + 700.0 * norm) * t) * 0.35
+                    (smoothNoise * 0.75 + sweep) * env
+                }
+                "sfx_bass_drop" -> {
+                    val env = exp(-norm * 3.8)
+                    val freq = 140.0 * exp(-norm * 2.2) + 38.0
+                    sin(2.0 * PI * freq * t) * env * 0.95
+                }
+                "sfx_shutter" -> {
+                    val click1 = exp(-norm * 28.0)
+                    val click2 = if (norm > 0.35) exp(-(norm - 0.35) * 32.0) else 0.0
+                    (rawNoise * 0.65 + sin(2.0 * PI * 1400.0 * t) * 0.35) * (click1 + click2)
+                }
+                "sfx_pop_ding" -> {
+                    val env = exp(-norm * 7.5)
+                    (sin(2.0 * PI * 880.0 * t) + 0.5 * sin(2.0 * PI * 1320.0 * t)) * env * 0.75
+                }
+                "sfx_glitch_zap" -> {
+                    val env = exp(-norm * 4.5)
+                    val mod = if ((i / 220) % 2 == 0) 920.0 else 310.0
+                    (sin(2.0 * PI * mod * t) * 0.6 + rawNoise * 0.35) * env
+                }
+                "sfx_riser" -> {
+                    val env = norm * norm
+                    val freq = 220.0 + 1100.0 * norm * norm
+                    (sin(2.0 * PI * freq * t) * 0.65 + smoothNoise * 0.35) * env
+                }
+                "sfx_sparkle" -> {
+                    val env = exp(-norm * 4.2)
+                    val note = when {
+                        norm < 0.25 -> 1046.5
+                        norm < 0.5 -> 1318.5
+                        norm < 0.75 -> 1568.0
+                        else -> 2093.0
+                    }
+                    sin(2.0 * PI * note * t) * env * 0.75
+                }
+                else -> { // sfx_boom
+                    val env = exp(-norm * 3.0)
+                    val sub = sin(2.0 * PI * (68.0 * exp(-norm * 1.4) + 32.0) * t)
+                    (sub * 0.85 + smoothNoise * 0.45) * env
+                }
+            }.coerceIn(-0.98, 0.98)
+
             val pcm16 = (sampleVal * Short.MAX_VALUE).toInt().toShort()
             pcmBytes[i * 2] = (pcm16.toInt() and 0xFF).toByte()
             pcmBytes[i * 2 + 1] = ((pcm16.toInt() shr 8) and 0xFF).toByte()

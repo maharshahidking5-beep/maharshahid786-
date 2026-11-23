@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SS Editing Hub — Studio & Creator Hub</title>
+  <style>
+    :root {
+      --bg: #090b12;
+      --surface: rgba(20, 24, 38, 0.92);
+      --surface-2: rgba(32, 38, 58, 0.9);
+      --text: #f5f7ff;
+      --muted: #9aa3be;
+      --accent1: #3b82f6;
+      --accent2: #a855f7;
+      --border: rgba(255, 255, 255, 0.12);
+      --bg-blur: 0px;
+      --bg-dim: 0.55;
+    }
+
+    body.light-theme {
+      --bg: #f4f6fb;
+      --surface: rgba(255, 255, 255, 0.94);
+      --surface-2: rgba(238, 242, 252, 0.95);
+      --text: #111524;
+      --muted: #58617a;
+      --border: rgba(17, 21, 36, 0.12);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* Custom User Wallpaper Layer */
+    #custom-bg-layer {
+      position: fixed;
+      inset: 0;
+      background-size: cover;
+      background-position: center;
+      filter: blur(var(--bg-blur));
+      opacity: 0;
+      pointer-events: none;
+      z-index: 0;
+      transition: opacity 0.25s ease;
+    }
+    body.custom-photo-theme #custom-bg-layer { opacity: 1; }
+
+    #custom-bg-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, var(--bg-dim));
+      pointer-events: none;
+      z-index: 1;
+      display: none;
+    }
+    body.custom-photo-theme #custom-bg-overlay { display: block; }
+
+    .app-shell {
+      width: 100%;
+      max-width: 460px;
+      min-height: 100vh;
+      position: relative;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      padding-bottom: 78px;
+    }
+
+    /* Header & Glowing SS Logo */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: var(--surface);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .ss-logo {
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--accent1), var(--accent2));
+      display: grid;
+      place-items: center;
+      font-weight: 900;
+      font-size: 18px;
+      color: #fff;
+      letter-spacing: -1px;
+      box-shadow: 0 0 18px rgba(168, 85, 247, 0.55);
+    }
+
+    .brand-title { font-weight: 800; font-size: 16px; }
+    .brand-sub { font-size: 11px; color: var(--muted); }
+
+    .btn {
+      border: none;
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-weight: 600;
+      font-size: 12px;
+      cursor: pointer;
+      color: #fff;
+      background: linear-gradient(135deg, var(--accent1), var(--accent2));
+    }
+
+    .btn-ghost {
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .page { display: none; padding: 14px; flex-direction: column; gap: 14px; }
+    .page.active { display: flex; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px;
+      backdrop-filter: blur(10px);
+    }
+
+    .card h3 { font-size: 15px; margin-bottom: 8px; }
+    .muted { color: var(--muted); font-size: 12px; }
+
+    /* Feed */
+    .video-post {
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .video-box {
+      height: 250px;
+      background: linear-gradient(145deg, #1d2647, #3b195c);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 14px;
+      color: #fff;
+    }
+    .post-footer {
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    /* Templates Grid */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .tpl-card {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .tpl-thumb {
+      height: 86px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(59,130,246,0.35), rgba(168,85,247,0.35));
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    /* Editor Timeline & Controls */
+    .preview-stage {
+      height: 170px;
+      border-radius: 12px;
+      background: #101422;
+      color: #fff;
+      display: grid;
+      place-items: center;
+      position: relative;
+      border: 1px dashed rgba(255,255,255,0.25);
+      margin-bottom: 10px;
+      text-align: center;
+      padding: 10px;
+    }
+    .safe-zone {
+      position: absolute;
+      inset: 12px;
+      border: 1px dashed #38bdf8;
+      pointer-events: none;
+      display: none;
+      font-size: 10px;
+      color: #38bdf8;
+    }
+    .safe-zone.show { display: block; }
+
+    .track {
+      background: var(--surface-2);
+      border-radius: 8px;
+      padding: 8px;
+      margin-top: 6px;
+      font-size: 12px;
+      border-left: 4px solid var(--accent1);
+    }
+    .track.audio { border-left-color: #22c55e; }
+    .track.text { border-left-color: var(--accent2); }
+
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .chip {
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    /* Monetization Progress Bars */
+    .bar-wrap {
+      width: 100%;
+      height: 10px;
+      background: var(--surface-2);
+      border-radius: 999px;
+      overflow: hidden;
+      margin: 6px 0 10px;
+    }
+    .bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent1), var(--accent2));
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    /* Chat */
+    .chat-log {
+      max-height: 210px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin: 10px 0;
+    }
+    .msg {
+      padding: 8px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      max-width: 85%;
+      background: var(--surface-2);
+    }
+    .msg.me { align-self: flex-end; background: linear-gradient(135deg, var(--accent1), var(--accent2)); color: #fff; }
+
+    input, select {
+      width: 100%;
+      padding: 9px 11px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text);
+      font-size: 12px;
+      margin-top: 6px;
+    }
+
+    /* Bottom Nav */
+    nav.bottom-nav {
+      position: fixed;
+      bottom: 0;
+      width: 100%;
+      max-width: 460px;
+      background: var(--surface);
+      backdrop-filter: blur(14px);
+      border-top: 1px solid var(--border);
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      padding: 8px 6px;
+      z-index: 20;
+    }
+
+    .nav-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 11px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      cursor: pointer;
+      padding: 4px;
+    }
+    .nav-btn.active { color: var(--text); font-weight: 700; }
+
+    .plus-btn {
+      background: linear-gradient(135deg, var(--accent1), var(--accent2));
+      color: #fff;
+      border-radius: 14px;
+      padding: 6px 10px;
+      font-weight: 800;
+      box-shadow: 0 0 14px rgba(59, 130, 246, 0.5);
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+      padding: 16px;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal-box {
+      width: 100%;
+      max-width: 380px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div id="custom-bg-layer"></div>
+  <div id="custom-bg-overlay"></div>
+
+  <div class="app-shell">
+    <header>
+      <div class="brand">
+        <div class="ss-logo">SS</div>
+        <div>
+          <div class="brand-title">SS Editing Hub</div>
+          <div class="brand-sub" id="user-status">Guest • Low-MB Cloud Mode</div>
+        </div>
+      </div>
+      <button class="btn" onclick="openAuthModal()">Gmail Login</button>
+    </header>
+
+    <!-- 1. FEED -->
+    <section id="page-feed" class="page active">
+      <div class="card">
+        <h3>Creator Feed</h3>
+        <p class="muted">Upload videos, earn from views once eligible (1,000 followers + 100,000 views in 30 days).</p>
+      </div>
+      <div id="feed-list"></div>
+    </section>
+
+    <!-- 2. TEMPLATES -->
+    <section id="page-templates" class="page">
+      <div class="card">
+        <h3>Readymade Templates Hub</h3>
+        <input type="text" id="tpl-search" placeholder="Search templates (Reels, Wedding, Beats, Vlog)..." oninput="renderTemplates()" />
+        <div class="chips" id="tpl-cats">
+          <span class="chip" onclick="filterCat('All')">All</span>
+          <span class="chip" onclick="filterCat('Reels')">Reels</span>
+          <span class="chip" onclick="filterCat('Wedding')">Wedding</span>
+          <span class="chip" onclick="filterCat('Vlog')">Vlog</span>
+        </div>
+      </div>
+      <div class="grid-2" id="tpl-grid"></div>
+    </section>
+
+    <!-- 3. CREATE / PRO EDITOR -->
+    <section id="page-create" class="page">
+      <div class="card">
+        <h3>Pro Video & Photo Editor</h3>
+        <div class="preview-stage" id="editor-stage">
+          <div class="safe-zone" id="safe-zone">SAFE ZONE (9:16)</div>
+          <div>
+            <div id="stage-label" style="font-weight:700;">Timeline Ready (Proxy Preview)</div>
+            <div class="muted" id="stage-meta" style="color:#cbd5e1;">Ratio: 9:16 • Filter: None • Effect: None</div>
+          </div>
+        </div>
+
+        <label class="muted">Export Resolution (360p – 4K) & FPS</label>
+        <div class="grid-2">
+          <select id="export-res">
+            <option>360p (Ultra Saver)</option>
+            <option>480p</option>
+            <option>720p HD</option>
+            <option selected>1080p Full HD</option>
+            <option>2K QHD</option>
+            <option>4K Ultra HD</option>
+          </select>
+          <select id="export-fps">
+            <option>24 FPS</option>
+            <option selected>30 FPS</option>
+            <option>60 FPS</option>
+          </select>
+        </div>
+
+        <div class="track">Video Track: Cut / Split / Speed Ramp / AI Cutout</div>
+        <div class="track audio">Audio Track: Beat Sync / SFX / Voiceover</div>
+        <div class="track text">Text & Captions: Urdu / Hindi / English / 3D</div>
+
+        <div class="chips">
+          <span class="chip" onclick="applyTool('Cinematic LUT', 'Glitch')">+ Cinematic & Glitch</span>
+          <span class="chip" onclick="applyTool('HDR Pop', 'Shake')">+ HDR & Shake</span>
+          <span class="chip" onclick="toggleSafeZone()">Toggle Safe-Zone</span>
+          <span class="chip" onclick="exportVideo()">Export Video</span>
+        </div>
+        <p class="muted" id="export-status" style="margin-top:8px;"></p>
+      </div>
+
+      <div class="card">
+        <h3>Upload Video to SS Feed</h3>
+        <input type="text" id="up-title" placeholder="Video title & #hashtags..." />
+        <input type="number" id="up-views" placeholder="Simulate initial views (e.g. 25000)" />
+        <button class="btn" style="margin-top:8px; width:100%;" onclick="uploadToFeed()">Publish Video to Feed</button>
+      </div>
+    </section>
+
+    <!-- 4. CHATS + CALLS + SS ASSISTANT -->
+    <section id="page-chats" class="page">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h3>Chats & SS Assistant</h3>
+          <div>
+            <button class="btn btn-ghost" onclick="startCall('Audio Call')">Audio Call</button>
+            <button class="btn" onclick="startCall('Video Call')">Video Call</button>
+          </div>
+        </div>
+        <p class="muted" id="phone-badge">Phone number required for calling: Not set</p>
+
+        <div class="chat-log" id="chat-log">
+          <div class="msg"><strong>SS Assistant:</strong> Hi! Ask me anything about 4K export, custom photo themes, or reaching 100,000 views in 30 days for monetization.</div>
+        </div>
+
+        <div class="chips">
+          <span class="chip" onclick="askAssistant('How do I unlock monetization?')">Monetization Rules</span>
+          <span class="chip" onclick="askAssistant('How to keep app smooth on 2GB RAM?')">Low-RAM Mode</span>
+          <span class="chip" onclick="askAssistant('How to set my own photo as theme?')">Custom Photo Theme</span>
+        </div>
+
+        <input type="text" id="chat-input" placeholder="Type message or ask SS Assistant..." />
+        <button class="btn" style="margin-top:8px; width:100%;" onclick="sendMessage()">Send Message</button>
+      </div>
+    </section>
+
+    <!-- 5. PROFILE + MONETIZATION + CUSTOM THEMES -->
+    <section id="page-profile" class="page">
+      <div class="card">
+        <h3 id="prof-name">@creator_ss</h3>
+        <p class="muted" id="prof-bio">Editing videos & building my creator channel on SS Editing Hub.</p>
+        <div style="display:flex; gap:14px; margin-top:8px; font-size:12px;">
+          <span><strong id="stat-followers">650</strong> Followers</span>
+          <span><strong id="stat-views-30d">48,500</strong> Views (30d)</span>
+          <span><strong>$0.00</strong> Est.</span>
+        </div>
+        <div class="chips">
+          <span class="chip" onclick="boostStats(400, 30000)">+400 Followers & +30k Views (Test)</span>
+          <span class="chip" onclick="boostStats(200, 35000)">+200 Followers & +35k Views (Test)</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Creator Monetization Tracker</h3>
+        <p class="muted">Requirement: <strong>1,000 Followers</strong> + <strong>100,000 Views in 1 Month (30 Days)</strong>.</p>
+
+        <div style="margin-top:8px; font-size:12px;">Followers: <span id="f-label">650 / 1,000</span></div>
+        <div class="bar-wrap"><div class="bar-fill" id="f-bar"></div></div>
+
+        <div style="font-size:12px;">30-Day Views: <span id="v-label">48,500 / 100,000</span></div>
+        <div class="bar-wrap"><div class="bar-fill" id="v-bar"></div></div>
+
+        <div id="monetize-status" style="font-size:12px; font-weight:700; color:#f59e0b;">Status: Locked — Keep growing to unlock monetization</div>
+      </div>
+
+      <div class="card">
+        <h3>Theme & Low-End Device Settings</h3>
+        <div class="chips">
+          <span class="chip" onclick="setTheme('dark')">Dark Theme</span>
+          <span class="chip" onclick="setTheme('light')">White / Light Theme</span>
+          <span class="chip" onclick="triggerPhotoTheme()">Custom Photo Theme</span>
+        </div>
+        <input type="file" id="bg-photo-input" accept="image/*" style="display:none;" onchange="applyCustomPhoto(event)" />
+
+        <label class="muted" style="display:block; margin-top:10px;">Custom Photo Blur (0px - 12px)</label>
+        <input type="range" min="0" max="12" value="2" oninput="document.documentElement.style.setProperty('--bg-blur', this.value + 'px')" />
+
+        <label class="muted" style="display:block; margin-top:8px;">Performance Mode</label>
+        <select id="perf-mode" onchange="alert('Performance mode set to: ' + this.value)">
+          <option selected>Ultra-Smooth Low-RAM Saver (2GB–3GB)</option>
+          <option>Balanced</option>
+          <option>High Quality Preview</option>
+        </select>
+      </div>
+    </section>
+
+    <nav class="bottom-nav">
+      <button class="nav-btn active" data-tab="feed" onclick="switchTab('feed', this)">Feed</button>
+      <button class="nav-btn" data-tab="templates" onclick="switchTab('templates', this)">Templates</button>
+      <button class="nav-btn" data-tab="create" onclick="switchTab('create', this)"><span class="plus-btn">+ Create</span></button>
+      <button class="nav-btn" data-tab="chats" onclick="switchTab('chats', this)">Chats</button>
+      <button class="nav-btn" data-tab="profile" onclick="switchTab('profile', this)">Profile</button>
+    </nav>
+  </div>
+
+  <!-- GMAIL LOGIN MODAL -->
+  <div class="modal-backdrop" id="auth-modal">
+    <div class="modal-box">
+      <h3>Sign in to SS Editing Hub</h3>
+      <p class="muted">Use your Gmail account to sync projects, themes, videos, and monetization progress.</p>
+      <input type="email" id="gmail-input" placeholder="yourname@gmail.com" />
+      <input type="text" id="handle-input" placeholder="@your_creator_name" />
+      <div style="display:flex; gap:8px; margin-top:12px;">
+        <button class="btn" style="flex:1;" onclick="saveGmailLogin()">Continue with Gmail</button>
+        <button class="btn btn-ghost" onclick="closeAuthModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CALL NUMBER MODAL -->
+  <div class="modal-backdrop" id="call-modal">
+    <div class="modal-box">
+      <h3 id="call-modal-title">Phone Number Required</h3>
+      <p class="muted">Enter your mobile number with country code to enable Audio & Video calls.</p>
+      <input type="tel" id="phone-input" placeholder="+92 300 1234567" />
+      <div style="display:flex; gap:8px; margin-top:12px;">
+        <button class="btn" style="flex:1;" onclick="confirmPhoneAndCall()">Save & Call</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('call-modal').classList.remove('open')">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      gmail: null,
+      handle: '@creator_ss',
+      phone: null,
+      pendingCallType: null,
+      followers: 650,
+      views30d: 48500,
+      activeCat: 'All',
+      posts: [
+        { user: '@viral_cuts', title: 'Beat sync transition pack #reels #sseditinghub', views: 54200, likes: 4100 },
+        { user: '@cinematic_pk', title: 'Color graded night street reel #4k #edit', views: 31800, likes: 2890 }
+      ],
+      templates: [
+        { name: 'Speed Ramp Reel', cat: 'Reels', uses: '18k' },
+        { name: 'Royal Wedding Glow', cat: 'Wedding', uses: '12k' },
+        { name: 'Daily Vlog Clean', cat: 'Vlog', uses: '9.4k' },
+        { name: 'Neon Beat Flash', cat: 'Reels', uses: '25k' }
+      ]
+    };
+
+    function switchTab(tab, el) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.getElementById('page-' + tab).classList.add('active');
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+      if (el) el.classList.add('active');
+      if (tab === 'profile') updateMonetizationUI();
+    }
+
+    function openAuthModal() { document.getElementById('auth-modal').classList.add('open'); }
+    function closeAuthModal() { document.getElementById('auth-modal').classList.remove('open'); }
+
+    function saveGmailLogin() {
+      const mail = document.getElementById('gmail-input').value.trim();
+      const handle = document.getElementById('handle-input').value.trim();
+      if (!mail || !mail.includes('@')) return alert('Please enter a valid Gmail address.');
+      state.gmail = mail;
+      if (handle) state.handle = handle.startsWith('@') ? handle : '@' + handle;
+      document.getElementById('user-status').textContent = state.gmail;
+      document.getElementById('prof-name').textContent = state.handle;
+      closeAuthModal();
+    }
+
+    function renderFeed() {
+      const wrap = document.getElementById('feed-list');
+      wrap.innerHTML = state.posts.map((p, i) => `
+        <div class="video-post">
+          <div class="video-box">
+            <span style="font-size:11px; opacity:0.85;">${p.user} • ${p.views.toLocaleString()} views</span>
+            <div>
+              <div style="font-weight:700; font-size:14px;">${p.title}</div>
+              <div style="font-size:11px; opacity:0.8;">SS Editing Hub Vertical Feed</div>
+            </div>
+          </div>
+          <div class="post-footer">
+            <button class="btn btn-ghost" onclick="likePost(${i})">Like (${p.likes})</button>
+            <button class="btn" onclick="switchTab('templates')">Use Template</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function likePost(i) {
+      state.posts[i].likes += 1;
+      renderFeed();
+    }
+
+    function uploadToFeed() {
+      const title = document.getElementById('up-title').value.trim() || 'New edited clip #sseditinghub';
+      const extraViews = parseInt(document.getElementById('up-views').value, 10) || 1200;
+      state.posts.unshift({ user: state.handle, title, views: extraViews, likes: 1 });
+      state.views30d += extraViews;
+      document.getElementById('up-title').value = '';
+      document.getElementById('up-views').value = '';
+      renderFeed();
+      updateMonetizationUI();
+      alert('Video published to SS Editing Hub Feed! +' + extraViews.toLocaleString() + ' views added to 30-day counter.');
+    }
+
+    function filterCat(cat) { state.activeCat = cat; renderTemplates(); }
+
+    function renderTemplates() {
+      const q = (document.getElementById('tpl-search')?.value || '').toLowerCase();
+      const list = state.templates.filter(t =>
+        (state.activeCat === 'All' || t.cat === state.activeCat) &&
+        t.name.toLowerCase().includes(q)
+      );
+      document.getElementById('tpl-grid').innerHTML = list.map(t => `
+        <div class="tpl-card">
+          <div class="tpl-thumb">${t.cat}</div>
+          <div style="font-weight:700; font-size:13px;">${t.name}</div>
+          <div class="muted">${t.uses} uses</div>
+          <button class="btn" onclick="useTemplate('${t.name}')">Use Template</button>
+        </div>
+      `).join('');
+    }
+
+    function useTemplate(name) {
+      document.getElementById('stage-label').textContent = 'Template Loaded: ' + name;
+      switchTab('create', document.querySelector('[data-tab="create"]'));
+    }
+
+    function applyTool(filter, effect) {
+      const res = document.getElementById('export-res').value;
+      const fps = document.getElementById('export-fps').value;
+      document.getElementById('stage-meta').textContent = `${res} • ${fps} • ${filter} • ${effect}`;
+    }
+
+    function toggleSafeZone() {
+      document.getElementById('safe-zone').classList.toggle('show');
+    }
+
+    function exportVideo() {
+      const res = document.getElementById('export-res').value;
+      const fps = document.getElementById('export-fps').value;
+      document.getElementById('export-status').textContent = `Exporting in ${res} at ${fps}... Ready to share or post to SS Feed.`;
+    }
+
+    function startCall(type) {
+      state.pendingCallType = type;
+      if (!state.phone) {
+        document.getElementById('call-modal-title').textContent = `${type} — Enter Phone Number`;
+        document.getElementById('call-modal').classList.add('open');
+      } else {
+        alert(`Starting ${type} using ${state.phone}...`);
+      }
+    }
+
+    function confirmPhoneAndCall() {
+      const num = document.getElementById('phone-input').value.trim();
+      if (!num) return alert('Please enter a valid mobile number.');
+      state.phone = num;
+      document.getElementById('phone-badge').textContent = 'Calling Number Linked: ' + state.phone;
+      document.getElementById('call-modal').classList.remove('open');
+      alert(`${state.pendingCallType} enabled and dialing with ${state.phone}...`);
+    }
+
+    function sendMessage() {
+      const inp = document.getElementById('chat-input');
+      const text = inp.value.trim();
+      if (!text) return;
+      appendMsg(text, true);
+      inp.value = '';
+      setTimeout(() => askAssistant(text, true), 250);
+    }
+
+    function askAssistant(question, alreadyAppended = false) {
+      if (!alreadyAppended) appendMsg(question, true);
+      let reply = 'SS Assistant: Use Templates for fast edits, Pro Editor for 360p–4K export, and grow to 1,000 followers + 100,000 views in 30 days for monetization.';
+      const q = question.toLowerCase();
+      if (q.includes('monetiz') || q.includes('100k') || q.includes('follower')) {
+        reply = 'SS Assistant: To unlock monetization on SS Editing Hub, reach at least 1,000 followers AND 100,000 views within 1 month (30 days).';
+      } else if (q.includes('ram') || q.includes('smooth') || q.includes('low')) {
+        reply = 'SS Assistant: Keep "Ultra-Smooth Low-RAM Saver" ON—it uses lightweight proxy previews while still supporting up to 4K export.';
+      } else if (q.includes('photo') || q.includes('theme')) {
+        reply = 'SS Assistant: Go to Profile > Custom Photo Theme to pick any photo from your device and adjust blur.';
+      }
+      appendMsg(reply, false);
+    }
+
+    function appendMsg(text, isMe) {
+      const log = document.getElementById('chat-log');
+      const div = document.createElement('div');
+      div.className = 'msg' + (isMe ? ' me' : '');
+      div.textContent = text;
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function setTheme(mode) {
+      document.body.classList.remove('light-theme', 'custom-photo-theme');
+      if (mode === 'light') document.body.classList.add('light-theme');
+    }
+
+    function triggerPhotoTheme() {
+      document.getElementById('bg-photo-input').click();
+    }
+
+    function applyCustomPhoto(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      document.getElementById('custom-bg-layer').style.backgroundImage = `url('${url}')`;
+      document.body.classList.remove('light-theme');
+      document.body.classList.add('custom-photo-theme');
+    }
+
+    function boostStats(addF, addV) {
+      state.followers += addF;
+      state.views30d += addV;
+      updateMonetizationUI();
+    }
+
+    function updateMonetizationUI() {
+      const fGoal = 1000;
+      const vGoal = 100000;
+      const fPct = Math.min(100, (state.followers / fGoal) * 100);
+      const vPct = Math.min(100, (state.views30d / vGoal) * 100);
+
+      document.getElementById('stat-followers').textContent = state.followers.toLocaleString();
+      document.getElementById('stat-views-30d').textContent = state.views30d.toLocaleString();
+      document.getElementById('f-label').textContent = `${state.followers.toLocaleString()} / 1,000`;
+      document.getElementById('v-label').textContent = `${state.views30d.toLocaleString()} / 100,000`;
+      document.getElementById('f-bar').style.width = fPct + '%';
+      document.getElementById('v-bar').style.width = vPct + '%';
+
+      const statusEl = document.getElementById('monetize-status');
+      if (state.followers >= fGoal && state.views30d >= vGoal) {
+        statusEl.textContent = 'Status: Eligible & Active! Creator monetization unlocked (1,000+ followers & 100k+ 30d views).';
+        statusEl.style.color = '#22c55e';
+      } else {
+        statusEl.textContent = 'Status: Locked — Need 1,000 followers & 100,000 views in 30 days.';
+        statusEl.style.color = '#f59e0b';
+      }
+    }
+
+    renderFeed();
+    renderTemplates();
+    updateMonetizationUI();
+  </script>
+</body>
+</html>

@@ -5,7 +5,9 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Dao
@@ -98,10 +100,17 @@ abstract class StudioDatabase : RoomDatabase() {
 }
 
 data class StudioPreferences(
-    val defaultResolution: ExportResolution = ExportResolution.RES_1080P,
-    val defaultFps: Int = 30,
+    val defaultResolution: ExportResolution = ExportResolution.RES_1080P_PLUS,
+    val defaultFps: Int = 60,
     val addEndingWatermark: Boolean = false,
-    val autoSaveDrafts: Boolean = true
+    val autoSaveDrafts: Boolean = true,
+    val batterySaverMode: Boolean = false,
+    val autoSyncOnline: Boolean = true,
+    val lastCloudSyncMs: Long = 0L,
+    val appThemeMode: String = "dark",
+    val customBgUri: String = "",
+    val customBgBlur: Float = 2f,
+    val linkedPhone: String = ""
 )
 
 class StudioRepository(
@@ -122,13 +131,20 @@ class StudioRepository(
     val exports: Flow<List<ExportEntity>> = dao.observeExports()
 
     val preferences: Flow<StudioPreferences> = context.studioDataStore.data.map { prefs ->
-        val resName = prefs[KEY_DEFAULT_RES] ?: ExportResolution.RES_1080P.name
-        val res = runCatching { ExportResolution.valueOf(resName) }.getOrDefault(ExportResolution.RES_1080P)
+        val resName = prefs[KEY_DEFAULT_RES] ?: ExportResolution.RES_1080P_PLUS.name
+        val res = runCatching { ExportResolution.valueOf(resName) }.getOrDefault(ExportResolution.RES_1080P_PLUS)
         StudioPreferences(
             defaultResolution = res,
-            defaultFps = prefs[KEY_DEFAULT_FPS] ?: 30,
+            defaultFps = prefs[KEY_DEFAULT_FPS] ?: 60,
             addEndingWatermark = prefs[KEY_WATERMARK] ?: false,
-            autoSaveDrafts = prefs[KEY_AUTOSAVE] ?: true
+            autoSaveDrafts = prefs[KEY_AUTOSAVE] ?: true,
+            batterySaverMode = prefs[KEY_BATTERY_SAVER] ?: false,
+            autoSyncOnline = prefs[KEY_AUTO_SYNC] ?: true,
+            lastCloudSyncMs = prefs[KEY_LAST_CLOUD_SYNC] ?: 0L,
+            appThemeMode = prefs[KEY_THEME_MODE] ?: "dark",
+            customBgUri = prefs[KEY_CUSTOM_BG_URI] ?: "",
+            customBgBlur = prefs[KEY_CUSTOM_BG_BLUR] ?: 2f,
+            linkedPhone = prefs[KEY_LINKED_PHONE] ?: ""
         )
     }
 
@@ -169,13 +185,27 @@ class StudioRepository(
         defaultResolution: ExportResolution? = null,
         defaultFps: Int? = null,
         addEndingWatermark: Boolean? = null,
-        autoSaveDrafts: Boolean? = null
+        autoSaveDrafts: Boolean? = null,
+        batterySaverMode: Boolean? = null,
+        autoSyncOnline: Boolean? = null,
+        lastCloudSyncMs: Long? = null,
+        appThemeMode: String? = null,
+        customBgUri: String? = null,
+        customBgBlur: Float? = null,
+        linkedPhone: String? = null
     ) {
         context.studioDataStore.edit { prefs ->
             defaultResolution?.let { prefs[KEY_DEFAULT_RES] = it.name }
             defaultFps?.let { prefs[KEY_DEFAULT_FPS] = it }
             addEndingWatermark?.let { prefs[KEY_WATERMARK] = it }
             autoSaveDrafts?.let { prefs[KEY_AUTOSAVE] = it }
+            batterySaverMode?.let { prefs[KEY_BATTERY_SAVER] = it }
+            autoSyncOnline?.let { prefs[KEY_AUTO_SYNC] = it }
+            lastCloudSyncMs?.let { prefs[KEY_LAST_CLOUD_SYNC] = it }
+            appThemeMode?.let { prefs[KEY_THEME_MODE] = it }
+            customBgUri?.let { prefs[KEY_CUSTOM_BG_URI] = it }
+            customBgBlur?.let { prefs[KEY_CUSTOM_BG_BLUR] = it }
+            linkedPhone?.let { prefs[KEY_LINKED_PHONE] = it }
         }
     }
 
@@ -184,5 +214,12 @@ class StudioRepository(
         private val KEY_DEFAULT_FPS = intPreferencesKey("default_fps")
         private val KEY_WATERMARK = booleanPreferencesKey("ending_watermark")
         private val KEY_AUTOSAVE = booleanPreferencesKey("autosave_drafts")
+        private val KEY_BATTERY_SAVER = booleanPreferencesKey("battery_saver_mode")
+        private val KEY_AUTO_SYNC = booleanPreferencesKey("auto_sync_online")
+        private val KEY_LAST_CLOUD_SYNC = longPreferencesKey("last_cloud_sync_ms")
+        private val KEY_THEME_MODE = stringPreferencesKey("app_theme_mode")
+        private val KEY_CUSTOM_BG_URI = stringPreferencesKey("custom_bg_uri")
+        private val KEY_CUSTOM_BG_BLUR = floatPreferencesKey("custom_bg_blur")
+        private val KEY_LINKED_PHONE = stringPreferencesKey("linked_phone")
     }
 }

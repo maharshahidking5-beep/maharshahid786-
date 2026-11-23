@@ -11,6 +11,12 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isAdmin() {
+      return isSignedIn() &&
+             request.auth.token.email == 'momiloveyousomuch7@gmail.com' &&
+             request.auth.token.email_verified == true;
+    }
+
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
@@ -109,6 +115,51 @@ service cloud.firestore {
     function isValidInteractionRef(data) {
       return data.targetId is string && data.targetId.size() >= 1 && data.targetId.size() <= 128 &&
              data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidBillingConfig(data) {
+      return data.jazzCashNumber is string && data.jazzCashNumber.size() <= 32 &&
+             data.jazzCashTitle is string && data.jazzCashTitle.size() >= 1 && data.jazzCashTitle.size() <= 80 &&
+             data.easyPaisaNumber is string && data.easyPaisaNumber.size() <= 32 &&
+             data.easyPaisaTitle is string && data.easyPaisaTitle.size() >= 1 && data.easyPaisaTitle.size() <= 80 &&
+             data.weeklyPricePkr is int && data.weeklyPricePkr >= 50 && data.weeklyPricePkr <= 100000 &&
+             data.monthlyPricePkr is int && data.monthlyPricePkr >= 50 && data.monthlyPricePkr <= 200000 &&
+             data.yearlyPricePkr is int && data.yearlyPricePkr >= 50 && data.yearlyPricePkr <= 500000 &&
+             data.adminNote is string && data.adminNote.size() <= 240 &&
+             data.updatedBy is string && data.updatedBy.size() >= 1 && data.updatedBy.size() <= 128 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidProRequest(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.buyerName is string && data.buyerName.size() >= 1 && data.buyerName.size() <= 60 &&
+             data.buyerHandle is string && data.buyerHandle.size() >= 2 && data.buyerHandle.size() <= 32 &&
+             data.buyerEmail is string && data.buyerEmail.size() <= 160 &&
+             data.packageId in ['WEEKLY_PRO', 'MONTHLY_PRO', 'YEARLY_PRO'] &&
+             data.packageTitle is string && data.packageTitle.size() >= 1 && data.packageTitle.size() <= 60 &&
+             data.amountPkr is int && data.amountPkr >= 50 && data.amountPkr <= 500000 &&
+             data.paymentMethod in ['JAZZCASH', 'EASYPAISA'] &&
+             data.senderPhone is string && data.senderPhone.size() >= 7 && data.senderPhone.size() <= 24 &&
+             data.transactionId is string && data.transactionId.size() >= 4 && data.transactionId.size() <= 40 &&
+             data.receiverNumber is string && data.receiverNumber.size() <= 32 &&
+             data.status in ['PENDING', 'APPROVED', 'REJECTED'] &&
+             data.adminNote is string && data.adminNote.size() <= 200 &&
+             data.reviewedBy is string && data.reviewedBy.size() <= 128 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidProEntitlement(data, targetUid) {
+      return data.userId is string && data.userId == targetUid &&
+             data.tier in ['WEEKLY_PRO', 'MONTHLY_PRO', 'YEARLY_PRO'] &&
+             data.status in ['ACTIVE', 'REVOKED'] &&
+             data.paymentMethod in ['JAZZCASH', 'EASYPAISA', 'ADMIN_GRANT'] &&
+             data.amountPkr is int && data.amountPkr >= 0 && data.amountPkr <= 500000 &&
+             data.aiVideoQuota is int && data.aiVideoQuota >= 0 && data.aiVideoQuota <= 10000 &&
+             data.grantedBy is string && data.grantedBy.size() >= 1 && data.grantedBy.size() <= 128 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
 
     // 1. Public Creator Profiles (no PII stored here)
@@ -269,6 +320,72 @@ service cloud.firestore {
 
         allow delete: if isSignedIn() && isValidId(postId) && isValidId(commentId) && existing().authorId == request.auth.uid;
       }
+    }
+
+    // 3. Admin-Managed Merchant Billing Config (JazzCash / EasyPaisa Numbers & PKR Packages)
+    match /appConfig/{configId} {
+      allow get: if isSignedIn() && isValidId(configId);
+      allow list: if false;
+
+      allow create: if isAdmin() &&
+                       isValidId(configId) &&
+                       incoming().keys().hasAll(['jazzCashNumber', 'jazzCashTitle', 'easyPaisaNumber', 'easyPaisaTitle', 'weeklyPricePkr', 'monthlyPricePkr', 'yearlyPricePkr', 'adminNote', 'updatedBy', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['jazzCashNumber', 'jazzCashTitle', 'easyPaisaNumber', 'easyPaisaTitle', 'weeklyPricePkr', 'monthlyPricePkr', 'yearlyPricePkr', 'adminNote', 'updatedBy', 'createdAt', 'updatedAt']) &&
+                       isValidBillingConfig(incoming());
+
+      allow update: if isAdmin() &&
+                       isValidId(configId) &&
+                       isValidBillingConfig(incoming()) &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['jazzCashNumber', 'jazzCashTitle', 'easyPaisaNumber', 'easyPaisaTitle', 'weeklyPricePkr', 'monthlyPricePkr', 'yearlyPricePkr', 'adminNote', 'updatedBy', 'updatedAt']);
+
+      allow delete: if false;
+    }
+
+    // 4. Pro Purchase Verification Requests (Users submit JazzCash/EasyPaisa TID; Only Admin approves)
+    match /proRequests/{requestId} {
+      allow get: if isSignedIn() && isValidId(requestId) && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() &&
+                       isValidId(requestId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().status == 'PENDING' &&
+                       incoming().reviewedBy == '' &&
+                       incoming().keys().hasAll(['userId', 'buyerName', 'buyerHandle', 'buyerEmail', 'packageId', 'packageTitle', 'amountPkr', 'paymentMethod', 'senderPhone', 'transactionId', 'receiverNumber', 'status', 'adminNote', 'reviewedBy', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'buyerName', 'buyerHandle', 'buyerEmail', 'packageId', 'packageTitle', 'amountPkr', 'paymentMethod', 'senderPhone', 'transactionId', 'receiverNumber', 'status', 'adminNote', 'reviewedBy', 'createdAt', 'updatedAt']) &&
+                       isValidProRequest(incoming());
+
+      allow update: if isAdmin() &&
+                       isValidId(requestId) &&
+                       isValidProRequest(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status', 'adminNote', 'reviewedBy', 'updatedAt']);
+
+      allow delete: if isValidId(requestId) && (isAdmin() || (isSignedIn() && existing().userId == request.auth.uid && existing().status == 'PENDING'));
+    }
+
+    // 5. Server-Authoritative AI Video Pro Entitlements (Only Admin writes; Owner or Admin reads)
+    match /proEntitlements/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+
+      allow create: if isAdmin() &&
+                       isValidId(userId) &&
+                       incoming().userId == userId &&
+                       incoming().keys().hasAll(['userId', 'tier', 'status', 'paymentMethod', 'amountPkr', 'aiVideoQuota', 'grantedBy', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'tier', 'status', 'paymentMethod', 'amountPkr', 'aiVideoQuota', 'grantedBy', 'createdAt', 'updatedAt']) &&
+                       isValidProEntitlement(incoming(), userId);
+
+      allow update: if isAdmin() &&
+                       isValidId(userId) &&
+                       isValidProEntitlement(incoming(), userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['tier', 'status', 'paymentMethod', 'amountPkr', 'aiVideoQuota', 'grantedBy', 'updatedAt']);
+
+      allow delete: if isAdmin() && isValidId(userId);
     }
   }
 }

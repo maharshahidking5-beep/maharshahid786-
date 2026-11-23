@@ -117,6 +117,66 @@
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp." }
       },
       "required": ["targetId", "createdAt"]
+    },
+    "BillingConfig": {
+      "title": "BillingConfig",
+      "description": "Admin-managed JazzCash and EasyPaisa merchant receive numbers and Pro package pricing.",
+      "type": "object",
+      "properties": {
+        "jazzCashNumber": { "type": "string", "description": "Admin JazzCash mobile account number." },
+        "jazzCashTitle": { "type": "string", "description": "Admin JazzCash account holder title." },
+        "easyPaisaNumber": { "type": "string", "description": "Admin EasyPaisa mobile account number." },
+        "easyPaisaTitle": { "type": "string", "description": "Admin EasyPaisa account holder title." },
+        "weeklyPricePkr": { "type": "integer", "description": "Weekly Starter Pro price in PKR." },
+        "monthlyPricePkr": { "type": "integer", "description": "Monthly Creator Pro price in PKR." },
+        "yearlyPricePkr": { "type": "integer", "description": "Yearly VIP Pro price in PKR." },
+        "adminNote": { "type": "string", "description": "Payment verification instructions shown at checkout." },
+        "updatedBy": { "type": "string", "description": "Admin UID or email." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update." }
+      },
+      "required": ["jazzCashNumber", "jazzCashTitle", "easyPaisaNumber", "easyPaisaTitle", "weeklyPricePkr", "monthlyPricePkr", "yearlyPricePkr", "adminNote", "updatedBy", "createdAt", "updatedAt"]
+    },
+    "ProPurchaseRequest": {
+      "title": "ProPurchaseRequest",
+      "description": "User payment proof submitted via JazzCash or EasyPaisa awaiting admin approval.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Buyer Firebase Auth UID." },
+        "buyerName": { "type": "string", "description": "Buyer display name." },
+        "buyerHandle": { "type": "string", "description": "Buyer @handle." },
+        "buyerEmail": { "type": "string", "description": "Buyer Gmail." },
+        "packageId": { "type": "string", "enum": ["WEEKLY_PRO", "MONTHLY_PRO", "YEARLY_PRO"], "description": "Selected AI Pro tier." },
+        "packageTitle": { "type": "string", "description": "Display name of package." },
+        "amountPkr": { "type": "integer", "description": "Amount paid in PKR." },
+        "paymentMethod": { "type": "string", "enum": ["JAZZCASH", "EASYPAISA"], "description": "Mobile wallet used." },
+        "senderPhone": { "type": "string", "description": "Buyer JazzCash/EasyPaisa mobile number." },
+        "transactionId": { "type": "string", "description": "TID reference from wallet receipt." },
+        "receiverNumber": { "type": "string", "description": "Admin number payment was sent to." },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"], "description": "Verification status." },
+        "adminNote": { "type": "string", "description": "Optional note from admin." },
+        "reviewedBy": { "type": "string", "description": "Admin identifier after review." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update." }
+      },
+      "required": ["userId", "buyerName", "buyerHandle", "buyerEmail", "packageId", "packageTitle", "amountPkr", "paymentMethod", "senderPhone", "transactionId", "receiverNumber", "status", "adminNote", "reviewedBy", "createdAt", "updatedAt"]
+    },
+    "ProEntitlement": {
+      "title": "ProEntitlement",
+      "description": "Admin-granted AI Video Gen Pro subscription entitlement keyed by user UID.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Subscriber Firebase Auth UID." },
+        "tier": { "type": "string", "enum": ["WEEKLY_PRO", "MONTHLY_PRO", "YEARLY_PRO"], "description": "Active Pro tier." },
+        "status": { "type": "string", "enum": ["ACTIVE", "REVOKED"], "description": "Entitlement status." },
+        "paymentMethod": { "type": "string", "enum": ["JAZZCASH", "EASYPAISA", "ADMIN_GRANT"], "description": "Payment source." },
+        "amountPkr": { "type": "integer", "description": "Verified PKR amount." },
+        "aiVideoQuota": { "type": "integer", "description": "Allowed AI video generations." },
+        "grantedBy": { "type": "string", "description": "Admin identifier who approved." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update." }
+      },
+      "required": ["userId", "tier", "status", "paymentMethod", "amountPkr", "aiVideoQuota", "grantedBy", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -155,6 +215,18 @@
     "/posts/{postId}/comments/{commentId}": {
       "schema": { "$ref": "#/entities/PostComment" },
       "description": "Comments on a TikTok feed post."
+    },
+    "/appConfig/{configId}": {
+      "schema": { "$ref": "#/entities/BillingConfig" },
+      "description": "Live JazzCash/EasyPaisa payout numbers and Pro prices editable only by Admin."
+    },
+    "/proRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/ProPurchaseRequest" },
+      "description": "User JazzCash/EasyPaisa Pro payment verification requests."
+    },
+    "/proEntitlements/{userId}": {
+      "schema": { "$ref": "#/entities/ProEntitlement" },
+      "description": "Admin-verified active AI Video Pro subscriptions per user."
     }
   }
 }

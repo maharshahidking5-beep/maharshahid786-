@@ -10,9 +10,13 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.common.util.UnstableApi
 import com.example.ai.AiCaptionPack
 import com.example.ai.AiEnhanceRecommendation
+import com.example.ai.AiGeneratedVideoResult
 import com.example.ai.AiLabService
 import com.example.ai.AiLabUiState
 import com.example.ai.AiTranslatedCaptionPack
+import com.example.ai.AiVideoGenUiState
+import com.example.ai.AiVideoGeneratorService
+import com.example.ai.AiVideoVisualStyle
 import com.example.data.ExportEntity
 import com.example.data.StudioDatabase
 import com.example.data.StudioPreferences
@@ -98,9 +102,16 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
     private val repository = StudioRepository(appContext, dao)
     private val exportManager = VideoExportManager(appContext)
     private val aiLabService = AiLabService()
+    private val aiVideoGeneratorService = AiVideoGeneratorService()
 
     private val _aiLabState = MutableStateFlow<AiLabUiState>(AiLabUiState.Idle)
     val aiLabState: StateFlow<AiLabUiState> = _aiLabState.asStateFlow()
+
+    private val _aiVideoGenState = MutableStateFlow<AiVideoGenUiState>(AiVideoGenUiState.Idle)
+    val aiVideoGenState: StateFlow<AiVideoGenUiState> = _aiVideoGenState.asStateFlow()
+
+    private val _aiGeneratedVideos = MutableStateFlow<List<AiGeneratedVideoResult>>(emptyList())
+    val aiGeneratedVideos: StateFlow<List<AiGeneratedVideoResult>> = _aiGeneratedVideos.asStateFlow()
 
     private val _assistantMessages = MutableStateFlow(
         listOf(
@@ -1812,6 +1823,78 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    // ==========================================
+    // AI PROMPT-TO-VIDEO PRO GENERATOR
+    // ==========================================
+
+    fun resetAiVideoGenState() {
+        _aiVideoGenState.value = AiVideoGenUiState.Idle
+    }
+
+    fun generateAiVideoFromPrompt(
+        prompt: String,
+        style: AiVideoVisualStyle,
+        aspectRatio: AspectRatioOption,
+        hasProAccess: Boolean,
+        onRequireProPackage: () -> Unit = {}
+    ) {
+        val cleanPrompt = prompt.trim()
+        if (cleanPrompt.isBlank()) {
+            _aiVideoGenState.value = AiVideoGenUiState.Error("Please write a video prompt first (Urdu, Hindi, or English).")
+            return
+        }
+        viewModelScope.launch {
+            val prefs = repository.preferences.first()
+            if (!hasProAccess && prefs.aiVideoTrialCount >= 1) {
+                _aiVideoGenState.value = AiVideoGenUiState.Error(
+                    "Free AI Video trial used (1/1). Purchase a Pro package via JazzCash or EasyPaisa to unlock unlimited AI Video Gen Pro!"
+                )
+                onRequireProPackage()
+                return@launch
+            }
+            _aiVideoGenState.value = AiVideoGenUiState.Generating("Connecting to AI Video Director...", 0.08f)
+            try {
+                val targetRes = if (hasProAccess) ExportResolution.RES_1080P_PLUS else ExportResolution.RES_1080P
+                val result = aiVideoGeneratorService.generateAiVideo(
+                    context = appContext,
+                    prompt = cleanPrompt,
+                    style = style,
+                    aspectRatio = aspectRatio,
+                    addWatermark = if (hasProAccess) prefs.addEndingWatermark else true,
+                    targetResolution = targetRes,
+                    targetFps = prefs.defaultFps
+                ) { stage, fraction ->
+                    _aiVideoGenState.value = AiVideoGenUiState.Generating(stage, fraction)
+                }
+                if (!hasProAccess) {
+                    repository.updatePreferences(aiVideoTrialCount = prefs.aiVideoTrialCount + 1)
+                }
+                repository.saveProject(result.project)
+                onCloudSyncProject?.invoke(result.project)
+                _aiGeneratedVideos.update { current -> listOf(result) + current.take(9) }
+                _aiVideoGenState.value = AiVideoGenUiState.Ready(result)
+            } catch (e: TimeoutCancellationException) {
+                _aiVideoGenState.value = AiVideoGenUiState.Error(
+                    e.localizedMessage ?: "AI video synthesis timed out. Please try a shorter prompt or retry."
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _aiVideoGenState.value = AiVideoGenUiState.Error(
+                    e.localizedMessage ?: "AI Video Pro generation failed. Check connection and try again."
+                )
+            }
+        }
+    }
+
+    fun openGeneratedVideoInEditor(result: AiGeneratedVideoResult, onReady: () -> Unit) {
+        viewModelScope.launch {
+            repository.saveProject(result.project)
+            openFreshProject(result.project, EditorToolTab.ROOT)
+            onReady()
+        }
+    }
+
     // Export Execution
     fun startExport() {
         val project = _editorState.value.project
@@ -1847,7 +1930,14 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         appThemeMode: String? = null,
         customBgUri: String? = null,
         customBgBlur: Float? = null,
-        linkedPhone: String? = null
+        linkedPhone: String? = null,
+        isPakistaniPro: Boolean? = null,
+        profileCoverStyle: String? = null,
+        profileLocalPhotoUri: String? = null,
+        profileLocalBannerUri: String? = null,
+        studioPasswordHash: String? = null,
+        studioPasswordSalt: String? = null,
+        registeredDevicesJson: String? = null
     ) {
         viewModelScope.launch {
             repository.updatePreferences(
@@ -1861,8 +1951,27 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                 appThemeMode = appThemeMode,
                 customBgUri = customBgUri,
                 customBgBlur = customBgBlur,
-                linkedPhone = linkedPhone
+                linkedPhone = linkedPhone,
+                isPakistaniPro = isPakistaniPro,
+                profileCoverStyle = profileCoverStyle,
+                profileLocalPhotoUri = profileLocalPhotoUri,
+                profileLocalBannerUri = profileLocalBannerUri,
+                studioPasswordHash = studioPasswordHash,
+                studioPasswordSalt = studioPasswordSalt,
+                registeredDevicesJson = registeredDevicesJson
             )
+        }
+    }
+
+    fun registerCurrentDeviceSession(userId: String) {
+        viewModelScope.launch {
+            val prefs = repository.preferences.first()
+            val updated = com.example.auth.AccountSecurityHelpers.registerDeviceInList(
+                existingJson = prefs.registeredDevicesJson,
+                deviceId = "${userId.take(12)}_${android.os.Build.MODEL.replace(" ", "_")}",
+                deviceLabel = com.example.auth.AccountSecurityHelpers.currentDeviceLabel()
+            )
+            repository.updatePreferences(registeredDevicesJson = updated)
         }
     }
 

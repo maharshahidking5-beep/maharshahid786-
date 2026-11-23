@@ -109,6 +109,139 @@ data class PostCommentDoc(
 )
 
 // ==========================================
+// 1B. AI VIDEO PRO BILLING (JAZZCASH / EASYPAISA) & ADMIN MODELS
+// ==========================================
+
+const val STUDIO_ADMIN_EMAIL = "momiloveyousomuch7@gmail.com"
+
+fun isStudioAdminEmail(email: String?): Boolean {
+    return email?.trim()?.equals(STUDIO_ADMIN_EMAIL, ignoreCase = true) == true
+}
+
+enum class ProPackageTier(
+    val id: String,
+    val title: String,
+    val tagline: String,
+    val videoQuota: Long,
+    val defaultPricePkr: Long,
+    val badge: String
+) {
+    WEEKLY_PRO(
+        id = "WEEKLY_PRO",
+        title = "Weekly Starter Pro",
+        tagline = "20 AI Pro Videos · 1080P+ No Watermark",
+        videoQuota = 20L,
+        defaultPricePkr = 299L,
+        badge = "7 DAYS"
+    ),
+    MONTHLY_PRO(
+        id = "MONTHLY_PRO",
+        title = "Monthly Creator Pro",
+        tagline = "Unlimited AI Videos · CapCut Pro + Canva Pro",
+        videoQuota = 500L,
+        defaultPricePkr = 799L,
+        badge = "BEST VALUE"
+    ),
+    YEARLY_PRO(
+        id = "YEARLY_PRO",
+        title = "Yearly VIP Pro",
+        tagline = "Unlimited AI 4K/1080P+ · All Pro Templates & Priority",
+        videoQuota = 5000L,
+        defaultPricePkr = 2499L,
+        badge = "VIP 365D"
+    );
+
+    companion object {
+        fun fromId(raw: String): ProPackageTier =
+            entries.firstOrNull { it.id == raw } ?: MONTHLY_PRO
+    }
+}
+
+enum class PakistanPaymentMethod(
+    val id: String,
+    val displayName: String,
+    val accentHex: Long
+) {
+    JAZZCASH("JAZZCASH", "JazzCash", 0xFFDC2626),
+    EASYPAISA("EASYPAISA", "EasyPaisa", 0xFF10B981);
+
+    companion object {
+        fun fromId(raw: String): PakistanPaymentMethod =
+            entries.firstOrNull { it.id == raw } ?: JAZZCASH
+    }
+}
+
+@Keep
+@IgnoreExtraProperties
+data class BillingConfigDoc(
+    @DocumentId val id: String = "",
+    val jazzCashNumber: String = "+92 300 0000000",
+    val jazzCashTitle: String = "s.s Studio Official",
+    val easyPaisaNumber: String = "+92 345 0000000",
+    val easyPaisaTitle: String = "s.s Studio Official",
+    val weeklyPricePkr: Long = 299L,
+    val monthlyPricePkr: Long = 799L,
+    val yearlyPricePkr: Long = 2499L,
+    val adminNote: String = "Send package fee to JazzCash or EasyPaisa above, then enter your sender mobile number & Transaction ID (TID) for fast Admin approval.",
+    val updatedBy: String = STUDIO_ADMIN_EMAIL,
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+) {
+    fun priceFor(tier: ProPackageTier): Long = when (tier) {
+        ProPackageTier.WEEKLY_PRO -> weeklyPricePkr.coerceAtLeast(50L)
+        ProPackageTier.MONTHLY_PRO -> monthlyPricePkr.coerceAtLeast(50L)
+        ProPackageTier.YEARLY_PRO -> yearlyPricePkr.coerceAtLeast(50L)
+    }
+
+    fun numberFor(method: PakistanPaymentMethod): String = when (method) {
+        PakistanPaymentMethod.JAZZCASH -> jazzCashNumber
+        PakistanPaymentMethod.EASYPAISA -> easyPaisaNumber
+    }
+
+    fun titleFor(method: PakistanPaymentMethod): String = when (method) {
+        PakistanPaymentMethod.JAZZCASH -> jazzCashTitle
+        PakistanPaymentMethod.EASYPAISA -> easyPaisaTitle
+    }
+}
+
+@Keep
+@IgnoreExtraProperties
+data class ProPurchaseRequestDoc(
+    @DocumentId val id: String = "",
+    val userId: String = "",
+    val buyerName: String = "",
+    val buyerHandle: String = "",
+    val buyerEmail: String = "",
+    val packageId: String = ProPackageTier.MONTHLY_PRO.id,
+    val packageTitle: String = ProPackageTier.MONTHLY_PRO.title,
+    val amountPkr: Long = 799L,
+    val paymentMethod: String = PakistanPaymentMethod.JAZZCASH.id,
+    val senderPhone: String = "",
+    val transactionId: String = "",
+    val receiverNumber: String = "",
+    val status: String = "PENDING", // PENDING | APPROVED | REJECTED
+    val adminNote: String = "",
+    val reviewedBy: String = "",
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+)
+
+@Keep
+@IgnoreExtraProperties
+data class ProEntitlementDoc(
+    @DocumentId val id: String = "",
+    val userId: String = "",
+    val tier: String = ProPackageTier.MONTHLY_PRO.id,
+    val status: String = "ACTIVE", // ACTIVE | REVOKED
+    val paymentMethod: String = PakistanPaymentMethod.JAZZCASH.id,
+    val amountPkr: Long = 0L,
+    val aiVideoQuota: Long = 500L,
+    val grantedBy: String = "",
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+)
+
+// ==========================================
 // 2. CANVA PRO DESIGN STUDIO MODELS
 // ==========================================
 

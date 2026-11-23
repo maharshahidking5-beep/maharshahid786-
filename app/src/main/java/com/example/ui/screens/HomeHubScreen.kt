@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.BatterySaver
@@ -48,9 +49,11 @@ import androidx.compose.material.icons.filled.Hd
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.VideoFile
 import androidx.compose.material.icons.filled.Wallpaper
+import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material.icons.outlined.MovieFilter
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -146,6 +149,13 @@ fun HomeHubScreen(
     onOpenSsAssistant: () -> Unit,
     onOpenMiniGuides: () -> Unit,
     onOpenBatchPhotoTool: () -> Unit,
+    onShareApp: () -> Unit = {},
+    hasAiProAccess: Boolean = false,
+    isAdminUser: Boolean = false,
+    pendingAdminRequestsCount: Int = 0,
+    onOpenAiVideoGenPro: () -> Unit = {},
+    onOpenProPackages: () -> Unit = {},
+    onOpenAdminConsole: () -> Unit = {},
     onUpdatePreferences: (
         defaultResolution: ExportResolution?,
         defaultFps: Int?,
@@ -198,6 +208,9 @@ fun HomeHubScreen(
             },
             QuickToolShortcut("Filters", Icons.Filled.FilterVintage, NeonRose) {
                 onLaunchDemoProject(EditorToolTab.FILTERS)
+            },
+            QuickToolShortcut("AI Video", Icons.Filled.AutoAwesome, ElectricCyan) {
+                onOpenAiVideoGenPro()
             },
             QuickToolShortcut("AI Lab", Icons.Filled.AutoAwesome, VioletPulse) {
                 onLaunchDemoProject(EditorToolTab.AI_LAB)
@@ -274,6 +287,21 @@ fun HomeHubScreen(
                                 contentDescription = "Open SS Assistant",
                                 tint = ElectricCyan,
                                 modifier = Modifier.size(19.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = onShareApp,
+                            modifier = Modifier
+                                .testTag("hub_share_app_button")
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(StudioSurfaceElevated)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Share,
+                                contentDescription = "Share s.s Studio with friends",
+                                tint = StudioAmber,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                         IconButton(
@@ -366,30 +394,162 @@ fun HomeHubScreen(
                             )
                         }
                         Spacer(modifier = Modifier.height(10.dp))
-                        OutlinedButton(
-                            onClick = { onLaunchDemoProject(EditorToolTab.ROOT) },
-                            modifier = Modifier
-                                .testTag("demo_project_button")
-                                .fillMaxWidth()
-                                .height(48.dp),
-                            shape = RoundedCornerShape(14.dp),
-                            border = BorderStroke(1.dp, StudioBorder),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                containerColor = StudioSurface.copy(alpha = 0.72f),
-                                contentColor = TextPrimary
-                            )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
+                            Button(
+                                onClick = onOpenAiVideoGenPro,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("hub_ai_video_pro_button")
+                                    .height(48.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = VioletPulse,
+                                    contentColor = Color.White
+                                )
+                            ) {
+                                Icon(Icons.Filled.AutoAwesome, null, modifier = Modifier.size(17.dp))
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text("AI Video Pro", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
+                            }
+                            OutlinedButton(
+                                onClick = { onLaunchDemoProject(EditorToolTab.ROOT) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("demo_project_button")
+                                    .height(48.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, StudioBorder),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = StudioSurface.copy(alpha = 0.72f),
+                                    contentColor = TextPrimary
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.PlayArrow,
+                                    contentDescription = null,
+                                    tint = ElectricCyan,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Demo Reel",
+                                    style = MaterialTheme.typography.labelLarge
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(12.dp))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("hub_pro_packages_card")
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable(onClick = onOpenProPackages),
+                        color = StudioSurfaceElevated,
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(
+                            1.dp,
+                            if (hasAiProAccess) StudioEmerald.copy(alpha = 0.6f) else StudioAmber.copy(alpha = 0.6f)
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        (if (hasAiProAccess) StudioEmerald else StudioAmber).copy(alpha = 0.16f)
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.WorkspacePremium,
+                                    contentDescription = null,
+                                    tint = if (hasAiProAccess) StudioEmerald else StudioAmber,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (hasAiProAccess) "AI Video Pro Active" else "Buy AI Video Pro Packages",
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = if (hasAiProAccess) StudioEmerald else TextPrimary
+                                )
+                                Text(
+                                    text = if (hasAiProAccess) {
+                                        "Unlimited prompt-to-video, 1080P+ HD & zero watermark"
+                                    } else {
+                                        "Pay easily via JazzCash & EasyPaisa (Weekly · Monthly · Yearly)"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextSecondary
+                                )
+                            }
                             Icon(
-                                imageVector = Icons.Filled.PlayArrow,
-                                contentDescription = null,
-                                tint = ElectricCyan,
+                                Icons.AutoMirrored.Filled.ArrowForward,
+                                null,
+                                tint = if (hasAiProAccess) StudioEmerald else StudioAmber,
                                 modifier = Modifier.size(18.dp)
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Try Studio Demo Reel",
-                                style = MaterialTheme.typography.labelLarge
-                            )
+                        }
+                    }
+
+                    if (isAdminUser) {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("hub_admin_console_card")
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable(onClick = onOpenAdminConsole),
+                            color = VioletPulse.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, VioletPulse.copy(alpha = 0.65f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(VioletPulse.copy(alpha = 0.2f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Filled.AdminPanelSettings, null, tint = VioletPulse, modifier = Modifier.size(18.dp))
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Admin Console (${pendingAdminRequestsCount} Pending)",
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = TextPrimary
+                                    )
+                                    Text(
+                                        text = "Change JazzCash / EasyPaisa numbers & approve Pro orders",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TextSecondary
+                                    )
+                                }
+                                Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = VioletPulse, modifier = Modifier.size(18.dp))
+                            }
                         }
                     }
                 }
@@ -532,7 +692,51 @@ fun HomeHubScreen(
             }
 
             item {
-                Spacer(modifier = Modifier.height(26.dp))
+                Spacer(modifier = Modifier.height(18.dp))
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp)
+                        .testTag("hub_share_invite_card")
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable(onClick = onShareApp),
+                    color = StudioSurfaceElevated,
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, StudioAmber.copy(alpha = 0.45f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(StudioAmber.copy(alpha = 0.16f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Filled.Share, null, tint = StudioAmber, modifier = Modifier.size(18.dp))
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Share s.s Studio with Friends",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = "Send app link & join on up to 10 mobiles",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary
+                            )
+                        }
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = StudioAmber, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(22.dp))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -828,6 +1032,20 @@ fun HomeHubScreen(
                         onCheckedChange = { onUpdatePreferences(null, null, null, it, null, null, null, null, null) },
                         modifier = Modifier.testTag("settings_autosave_switch")
                     )
+                }
+
+                OutlinedButton(
+                    onClick = onShareApp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("settings_share_app_button"),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, StudioAmber.copy(alpha = 0.65f))
+                ) {
+                    Icon(Icons.Filled.Share, null, tint = StudioAmber, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Share s.s Studio with Friends", color = StudioAmber, fontWeight = FontWeight.Bold)
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))

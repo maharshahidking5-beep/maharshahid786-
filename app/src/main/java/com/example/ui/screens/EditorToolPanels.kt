@@ -238,6 +238,7 @@ fun EditorBottomToolbar(
     onSmartAutoCropRatio: (AspectRatioOption, Boolean) -> Unit,
     onSelectCanvasColor: (Long) -> Unit,
     onSelectCanvasStyle: (CanvasStyle) -> Unit,
+    onOpenAiVideoGen: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -324,7 +325,8 @@ fun EditorBottomToolbar(
                         onRunAiCaptions = onRunAiCaptions,
                         onApplyAiCaptions = onApplyAiCaptions,
                         onStreamAiScript = onStreamAiScript,
-                        onResetAiState = onResetAiState
+                        onResetAiState = onResetAiState,
+                        onOpenAiVideoGen = onOpenAiVideoGen
                     )
                     EditorToolTab.VOICE_FX -> VoiceEnhancerPanel(
                         voiceSettings = project.voiceEnhance,

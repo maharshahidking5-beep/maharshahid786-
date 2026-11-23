@@ -3,15 +3,22 @@ package com.example.data
 import android.content.Context
 import android.util.Log
 import com.example.R
+import com.example.auth.AccountSecurityHelpers
 import com.example.auth.OperationType
 import com.example.auth.handleFirestoreError
+import com.example.model.BillingConfigDoc
 import com.example.model.CanvaDesignDoc
 import com.example.model.CanvaProject
 import com.example.model.CloudProjectSummaryDoc
+import com.example.model.PakistanPaymentMethod
 import com.example.model.PostCommentDoc
+import com.example.model.ProEntitlementDoc
+import com.example.model.ProPackageTier
+import com.example.model.ProPurchaseRequestDoc
 import com.example.model.ProjectData
 import com.example.model.SocialVideoPostDoc
 import com.example.model.UserProfileDoc
+import com.example.model.isStudioAdminEmail
 import com.google.firebase.Firebase
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
@@ -151,7 +158,8 @@ class CloudSocialRepository(
     suspend fun updateUserProfile(
         displayName: String,
         handle: String,
-        bio: String
+        bio: String,
+        photoUrl: String? = null
     ): Result<Unit> {
         val uid = auth.currentUser?.uid ?: return Result.failure(IllegalStateException("Not signed in"))
         val cleanName = displayName.trim().take(60)
@@ -162,14 +170,16 @@ class CloudSocialRepository(
         }
         val path = "users/$uid"
         return try {
-            db.collection("users").document(uid).update(
-                mapOf(
-                    "displayName" to cleanName,
-                    "handle" to cleanHandle,
-                    "bio" to cleanBio,
-                    "updatedAt" to FieldValue.serverTimestamp()
-                )
-            ).await()
+            val updates = mutableMapOf<String, Any>(
+                "displayName" to cleanName,
+                "handle" to cleanHandle,
+                "bio" to cleanBio,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            if (photoUrl != null) {
+                updates["photoUrl"] = photoUrl.trim().take(500)
+            }
+            db.collection("users").document(uid).update(updates).await()
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
@@ -726,6 +736,304 @@ class CloudSocialRepository(
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.DELETE, path)
+            Result.failure(e)
+        }
+    }
+
+    // ==========================================
+    // ADMIN JAZZCASH / EASYPAISA BILLING & PRO ENTITLEMENTS
+    // ==========================================
+
+    fun observeBillingConfig(): Flow<BillingConfigDoc> = flow {
+        requireUserId()
+        val path = "appConfig/billing"
+        emitAll(
+            db.collection("appConfig").document("billing")
+                .snapshots()
+                .map { snap ->
+                    snap.toObject(BillingConfigDoc::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                        ?: BillingConfigDoc()
+                }
+                .catch { error ->
+                    val fsErr = generateSequence(error) { it.cause }.filterIsInstance<FirebaseFirestoreException>().firstOrNull()
+                    if (fsErr == null && error is CancellationException) throw error
+                    if (auth.currentUser != null) handleFirestoreError(fsErr ?: error, OperationType.GET, path)
+                    throw error
+                }
+        )
+    }
+
+    suspend fun ensureBillingConfigInitializedByAdmin(): Result<Unit> {
+        val user = auth.currentUser ?: return Result.failure(IllegalStateException("Not signed in"))
+        if (!isStudioAdminEmail(user.email)) return Result.success(Unit)
+        val path = "appConfig/billing"
+        return try {
+            val docRef = db.collection("appConfig").document("billing")
+            val snap = docRef.get().await()
+            if (!snap.exists()) {
+                val defaults = BillingConfigDoc()
+                docRef.set(
+                    mapOf(
+                        "jazzCashNumber" to defaults.jazzCashNumber,
+                        "jazzCashTitle" to defaults.jazzCashTitle,
+                        "easyPaisaNumber" to defaults.easyPaisaNumber,
+                        "easyPaisaTitle" to defaults.easyPaisaTitle,
+                        "weeklyPricePkr" to defaults.weeklyPricePkr,
+                        "monthlyPricePkr" to defaults.monthlyPricePkr,
+                        "yearlyPricePkr" to defaults.yearlyPricePkr,
+                        "adminNote" to defaults.adminNote,
+                        "updatedBy" to (user.email ?: user.uid).take(128),
+                        "createdAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun saveBillingConfigByAdmin(config: BillingConfigDoc): Result<Unit> {
+        val user = auth.currentUser ?: return Result.failure(IllegalStateException("Not signed in"))
+        if (!isStudioAdminEmail(user.email)) {
+            return Result.failure(SecurityException("Only the app Admin can change merchant numbers & package prices."))
+        }
+        val cleanJazzNum = config.jazzCashNumber.trim().take(32)
+        val cleanJazzTitle = config.jazzCashTitle.trim().take(80).ifBlank { "s.s Studio Official" }
+        val cleanEasyNum = config.easyPaisaNumber.trim().take(32)
+        val cleanEasyTitle = config.easyPaisaTitle.trim().take(80).ifBlank { "s.s Studio Official" }
+        val weekly = config.weeklyPricePkr.coerceIn(50L, 100_000L)
+        val monthly = config.monthlyPricePkr.coerceIn(50L, 200_000L)
+        val yearly = config.yearlyPricePkr.coerceIn(50L, 500_000L)
+        val note = config.adminNote.trim().take(240)
+        val updater = (user.email ?: user.uid).take(128)
+        val path = "appConfig/billing"
+
+        return try {
+            val docRef = db.collection("appConfig").document("billing")
+            val snap = docRef.get().await()
+            if (!snap.exists()) {
+                docRef.set(
+                    mapOf(
+                        "jazzCashNumber" to cleanJazzNum,
+                        "jazzCashTitle" to cleanJazzTitle,
+                        "easyPaisaNumber" to cleanEasyNum,
+                        "easyPaisaTitle" to cleanEasyTitle,
+                        "weeklyPricePkr" to weekly,
+                        "monthlyPricePkr" to monthly,
+                        "yearlyPricePkr" to yearly,
+                        "adminNote" to note,
+                        "updatedBy" to updater,
+                        "createdAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            } else {
+                docRef.update(
+                    mapOf(
+                        "jazzCashNumber" to cleanJazzNum,
+                        "jazzCashTitle" to cleanJazzTitle,
+                        "easyPaisaNumber" to cleanEasyNum,
+                        "easyPaisaTitle" to cleanEasyTitle,
+                        "weeklyPricePkr" to weekly,
+                        "monthlyPricePkr" to monthly,
+                        "yearlyPricePkr" to yearly,
+                        "adminNote" to note,
+                        "updatedBy" to updater,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, path)
+            Result.failure(e)
+        }
+    }
+
+    fun observeMyProEntitlement(userId: String): Flow<ProEntitlementDoc?> = flow {
+        require(userId.isNotBlank()) { "User ID must not be blank" }
+        val path = "proEntitlements/$userId"
+        emitAll(
+            db.collection("proEntitlements").document(userId)
+                .snapshots()
+                .map { snap ->
+                    snap.toObject(ProEntitlementDoc::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                }
+                .catch { error ->
+                    val fsErr = generateSequence(error) { it.cause }.filterIsInstance<FirebaseFirestoreException>().firstOrNull()
+                    if (fsErr == null && error is CancellationException) throw error
+                    if (auth.currentUser?.uid == userId) handleFirestoreError(fsErr ?: error, OperationType.GET, path)
+                    throw error
+                }
+        )
+    }
+
+    fun observeMyProRequests(userId: String): Flow<List<ProPurchaseRequestDoc>> = flow {
+        require(userId.isNotBlank()) { "User ID must not be blank" }
+        val path = "proRequests"
+        emitAll(
+            db.collection("proRequests")
+                .whereEqualTo("userId", userId)
+                .snapshots()
+                .map { snap ->
+                    snap.toObjects(ProPurchaseRequestDoc::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                        .sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
+                }
+                .catch { error ->
+                    val fsErr = generateSequence(error) { it.cause }.filterIsInstance<FirebaseFirestoreException>().firstOrNull()
+                    if (fsErr == null && error is CancellationException) throw error
+                    if (auth.currentUser?.uid == userId) handleFirestoreError(fsErr ?: error, OperationType.LIST, path)
+                    throw error
+                }
+        )
+    }
+
+    fun observeAllProRequestsForAdmin(): Flow<List<ProPurchaseRequestDoc>> = flow {
+        val user = auth.currentUser ?: throw IllegalStateException("Not signed in")
+        if (!isStudioAdminEmail(user.email)) {
+            emit(emptyList())
+            return@flow
+        }
+        val path = "proRequests"
+        emitAll(
+            db.collection("proRequests")
+                .snapshots()
+                .map { snap ->
+                    snap.toObjects(ProPurchaseRequestDoc::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                        .sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
+                }
+                .catch { error ->
+                    val fsErr = generateSequence(error) { it.cause }.filterIsInstance<FirebaseFirestoreException>().firstOrNull()
+                    if (fsErr == null && error is CancellationException) throw error
+                    if (auth.currentUser != null) handleFirestoreError(fsErr ?: error, OperationType.LIST, path)
+                    throw error
+                }
+        )
+    }
+
+    suspend fun submitProPurchaseRequest(
+        profile: UserProfileDoc,
+        buyerEmail: String,
+        packageTier: ProPackageTier,
+        billingConfig: BillingConfigDoc,
+        method: PakistanPaymentMethod,
+        senderPhoneRaw: String,
+        transactionIdRaw: String
+    ): Result<Unit> {
+        val uid = auth.currentUser?.uid ?: return Result.failure(IllegalStateException("Not signed in"))
+        val cleanPhone = AccountSecurityHelpers.normalizePakistaniPhone(senderPhoneRaw)
+            ?: senderPhoneRaw.trim().takeIf { it.length in 7..24 }
+            ?: return Result.failure(IllegalArgumentException("Enter a valid JazzCash/EasyPaisa mobile number (e.g. 03001234567)."))
+        val cleanTid = transactionIdRaw.trim().take(40)
+        if (cleanTid.length < 4) {
+            return Result.failure(IllegalArgumentException("Enter a valid Transaction ID (TID) of at least 4 characters."))
+        }
+        val requestId = "req_${UUID.randomUUID().toString().replace("-", "_")}"
+        val path = "proRequests/$requestId"
+        val pricePkr = billingConfig.priceFor(packageTier).coerceIn(50L, 500_000L)
+        val receiverNumber = billingConfig.numberFor(method).trim().take(32)
+
+        return try {
+            db.collection("proRequests").document(requestId).set(
+                mapOf(
+                    "userId" to uid,
+                    "buyerName" to profile.displayName.ifBlank { "s.s Creator" }.take(60),
+                    "buyerHandle" to profile.handle.ifBlank { "@creator" }.take(32),
+                    "buyerEmail" to buyerEmail.trim().take(160),
+                    "packageId" to packageTier.id,
+                    "packageTitle" to packageTier.title.take(60),
+                    "amountPkr" to pricePkr,
+                    "paymentMethod" to method.id,
+                    "senderPhone" to cleanPhone.take(24),
+                    "transactionId" to cleanTid,
+                    "receiverNumber" to receiverNumber,
+                    "status" to "PENDING",
+                    "adminNote" to "",
+                    "reviewedBy" to "",
+                    "createdAt" to FieldValue.serverTimestamp(),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun reviewProPurchaseRequestByAdmin(
+        request: ProPurchaseRequestDoc,
+        approve: Boolean,
+        adminNote: String = ""
+    ): Result<Unit> {
+        val adminUser = auth.currentUser ?: return Result.failure(IllegalStateException("Not signed in"))
+        if (!isStudioAdminEmail(adminUser.email)) {
+            return Result.failure(SecurityException("Only the app Admin can approve Pro payments."))
+        }
+        if (request.id.isBlank() || request.userId.isBlank()) {
+            return Result.failure(IllegalArgumentException("Invalid request reference."))
+        }
+        val reviewer = (adminUser.email ?: adminUser.uid).take(128)
+        val nextStatus = if (approve) "APPROVED" else "REJECTED"
+        val cleanNote = adminNote.trim().take(200)
+        val reqPath = "proRequests/${request.id}"
+
+        return try {
+            db.collection("proRequests").document(request.id).update(
+                mapOf(
+                    "status" to nextStatus,
+                    "adminNote" to cleanNote,
+                    "reviewedBy" to reviewer,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+
+            if (approve) {
+                val tier = ProPackageTier.fromId(request.packageId)
+                val entRef = db.collection("proEntitlements").document(request.userId)
+                val entSnap = entRef.get().await()
+                if (!entSnap.exists()) {
+                    entRef.set(
+                        mapOf(
+                            "userId" to request.userId,
+                            "tier" to tier.id,
+                            "status" to "ACTIVE",
+                            "paymentMethod" to PakistanPaymentMethod.fromId(request.paymentMethod).id,
+                            "amountPkr" to request.amountPkr.coerceIn(0L, 500_000L),
+                            "aiVideoQuota" to tier.videoQuota,
+                            "grantedBy" to reviewer,
+                            "createdAt" to FieldValue.serverTimestamp(),
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                    ).await()
+                } else {
+                    entRef.update(
+                        mapOf(
+                            "tier" to tier.id,
+                            "status" to "ACTIVE",
+                            "paymentMethod" to PakistanPaymentMethod.fromId(request.paymentMethod).id,
+                            "amountPkr" to request.amountPkr.coerceIn(0L, 500_000L),
+                            "aiVideoQuota" to tier.videoQuota,
+                            "grantedBy" to reviewer,
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                    ).await()
+                }
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, reqPath)
             Result.failure(e)
         }
     }

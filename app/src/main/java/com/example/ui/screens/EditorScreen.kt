@@ -150,6 +150,7 @@ fun EditorScreen(
     onPublishExportToTikTok: ((com.example.data.ExportEntity) -> Unit)? = null,
     onOpenAssistant: (() -> Unit)? = null,
     onOpenMiniGuides: (() -> Unit)? = null,
+    onOpenAiVideoGen: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.editorState.collectAsStateWithLifecycle()
@@ -1406,7 +1407,8 @@ fun EditorScreen(
                 onResetAdjustments = { viewModel.resetAdjustments() },
                 onSmartAutoCropRatio = { ratio, smartCrop -> viewModel.applyOneClickRatioAndSmartCrop(ratio, smartCrop) },
                 onSelectCanvasColor = { viewModel.updateCanvasColor(it) },
-                onSelectCanvasStyle = { viewModel.updateCanvasStyle(it) }
+                onSelectCanvasStyle = { viewModel.updateCanvasStyle(it) },
+                onOpenAiVideoGen = onOpenAiVideoGen
             )
         }
     }

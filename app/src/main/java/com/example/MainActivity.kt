@@ -50,7 +50,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import coil.compose.AsyncImage
 import com.example.ai.configureAppCheck
+import com.example.auth.AppShareHelper
 import com.example.auth.AuthScreen
+import com.example.auth.PendingSignUpProfile
 import com.example.auth.authStateFlow
 import com.example.auth.signOutWithCleanup
 import com.example.data.CloudSocialRepository
@@ -60,12 +62,15 @@ import com.example.model.EditorToolTab
 import com.example.model.MainNavTab
 import com.example.model.TemplateItem
 import com.example.ui.components.StudioBottomNavigation
+import com.example.ui.screens.AdminBillingConsoleSheet
+import com.example.ui.screens.AiVideoProSheet
 import com.example.ui.screens.BatchPhotoToolSheet
 import com.example.ui.screens.CanvaStudioScreen
 import com.example.ui.screens.EditorScreen
 import com.example.ui.screens.HomeHubScreen
 import com.example.ui.screens.MiniGuidesBottomSheet
 import com.example.ui.screens.PendingTikTokPostDraft
+import com.example.ui.screens.ProPurchaseSheet
 import com.example.ui.screens.ProfileScreen
 import com.example.ui.screens.SsAssistantBottomSheet
 import com.example.ui.screens.TemplatesScreen
@@ -111,13 +116,22 @@ class MainActivity : ComponentActivity() {
 fun SsStudioRoot() {
     val authFlow = remember { Firebase.auth.authStateFlow() }
     val currentUser by authFlow.collectAsStateWithLifecycle(initialValue = Firebase.auth.currentUser)
+    var pendingSignUp by remember { mutableStateOf<PendingSignUpProfile?>(null) }
 
     val user = currentUser
     if (user == null) {
-        AuthScreen(onAuthSuccess = { })
+        AuthScreen(
+            onAuthSuccess = { signUpData ->
+                pendingSignUp = signUpData
+            }
+        )
     } else {
         key(user.uid) {
-            SsAuthenticatedStudioApp(currentUser = user)
+            SsAuthenticatedStudioApp(
+                currentUser = user,
+                pendingSignUp = pendingSignUp,
+                onClearPendingSignUp = { pendingSignUp = null }
+            )
         }
     }
 }
@@ -125,6 +139,8 @@ fun SsStudioRoot() {
 @Composable
 fun SsAuthenticatedStudioApp(
     currentUser: FirebaseUser,
+    pendingSignUp: PendingSignUpProfile? = null,
+    onClearPendingSignUp: () -> Unit = {},
     studioViewModel: StudioViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -144,8 +160,22 @@ fun SsAuthenticatedStudioApp(
         }
     )
 
-    LaunchedEffect(currentUser.uid) {
-        socialViewModel.ensureProfileAndSeed(currentUser)
+    LaunchedEffect(currentUser.uid, pendingSignUp) {
+        studioViewModel.registerCurrentDeviceSession(currentUser.uid)
+        val signUpData = pendingSignUp
+        if (signUpData != null) {
+            studioViewModel.updateStudioPreferences(
+                studioPasswordHash = signUpData.passwordHash,
+                studioPasswordSalt = signUpData.passwordSalt,
+                isPakistaniPro = signUpData.wantsPakistaniPro,
+                linkedPhone = signUpData.pakistaniPhone.takeIf { it.isNotBlank() }
+            )
+        }
+        socialViewModel.ensureProfileAndSeed(
+            user = currentUser,
+            pendingSignUp = signUpData,
+            onSignUpConsumed = onClearPendingSignUp
+        )
     }
 
     DisposableEffect(studioViewModel, socialViewModel) {
@@ -180,6 +210,20 @@ fun SsAuthenticatedStudioApp(
     val socialStatusMessage by socialViewModel.statusMessage.collectAsStateWithLifecycle()
     val cloudSyncState by socialViewModel.cloudSyncState.collectAsStateWithLifecycle()
 
+    val billingConfig by socialViewModel.billingConfig.collectAsStateWithLifecycle()
+    val myEntitlement by socialViewModel.myEntitlement.collectAsStateWithLifecycle()
+    val myProRequests by socialViewModel.myProRequests.collectAsStateWithLifecycle()
+    val allAdminProRequests by socialViewModel.allAdminProRequests.collectAsStateWithLifecycle()
+    val hasActiveAiPro by socialViewModel.hasActiveAiPro.collectAsStateWithLifecycle()
+    val isSocialBusy by socialViewModel.isBusy.collectAsStateWithLifecycle()
+    val isAdminUser = socialViewModel.isAdminUser
+    val pendingAdminRequestsCount = remember(allAdminProRequests) {
+        allAdminProRequests.count { it.status == "PENDING" }
+    }
+
+    val aiVideoGenState by studioViewModel.aiVideoGenState.collectAsStateWithLifecycle()
+    val aiGeneratedVideos by studioViewModel.aiGeneratedVideos.collectAsStateWithLifecycle()
+
     LaunchedEffect(projects, preferences.autoSyncOnline, preferences.lastCloudSyncMs) {
         socialViewModel.updateSyncMetadataFromLocal(
             localProjects = projects,
@@ -202,6 +246,9 @@ fun SsAuthenticatedStudioApp(
     var showAssistantSheet by remember { mutableStateOf(false) }
     var showMiniGuidesSheet by remember { mutableStateOf(false) }
     var showBatchPhotoSheet by remember { mutableStateOf(false) }
+    var showAiVideoProSheet by remember { mutableStateOf(false) }
+    var showProPurchaseSheet by remember { mutableStateOf(false) }
+    var showAdminBillingSheet by remember { mutableStateOf(false) }
 
     val multiMediaPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 12)
@@ -314,6 +361,21 @@ fun SsAuthenticatedStudioApp(
                                     onOpenSsAssistant = { showAssistantSheet = true },
                                     onOpenMiniGuides = { showMiniGuidesSheet = true },
                                     onOpenBatchPhotoTool = { showBatchPhotoSheet = true },
+                                    onShareApp = {
+                                        AppShareHelper.shareAppWithFriends(
+                                            context = context,
+                                            senderHandle = profile?.handle,
+                                            isPakPro = preferences.isPakistaniPro
+                                        )
+                                    },
+                                    hasAiProAccess = hasActiveAiPro,
+                                    isAdminUser = isAdminUser,
+                                    pendingAdminRequestsCount = pendingAdminRequestsCount,
+                                    onOpenAiVideoGenPro = { showAiVideoProSheet = true },
+                                    onOpenProPackages = { showProPurchaseSheet = true },
+                                    onOpenAdminConsole = {
+                                        if (isAdminUser) showAdminBillingSheet = true
+                                    },
                                     onUpdatePreferences = { res, fps, wm, autoSave, batSaver, autoSync, themeMode, bgUri, bgBlur ->
                                         studioViewModel.updateStudioPreferences(
                                             defaultResolution = res,
@@ -413,6 +475,7 @@ fun SsAuthenticatedStudioApp(
                                 profileUiState = profileUiState,
                                 profile = profile,
                                 privateEmail = privateEmail,
+                                preferences = preferences,
                                 linkedPhone = preferences.linkedPhone,
                                 cloudSyncState = cloudSyncState,
                                 useTransparentBg = hasPhotoWallpaper,
@@ -423,12 +486,46 @@ fun SsAuthenticatedStudioApp(
                                 canvaDesigns = canvaDesigns,
                                 exports = exports,
                                 decodeCanvaDesign = { socialViewModel.decodeCanvaDesign(it) },
-                                onUpdateProfile = { name, handle, bio ->
-                                    socialViewModel.updateProfile(name, handle, bio)
+                                onUpdateProfile = { name, handle, bio, photoUrl ->
+                                    socialViewModel.updateProfile(name, handle, bio, photoUrl)
+                                },
+                                onUpdateProfileCustomization = { cover, localPhoto, localBanner ->
+                                    studioViewModel.updateStudioPreferences(
+                                        profileCoverStyle = cover,
+                                        profileLocalPhotoUri = localPhoto,
+                                        profileLocalBannerUri = localBanner
+                                    )
+                                },
+                                onActivatePakistaniPro = { normalizedPhone ->
+                                    studioViewModel.updateStudioPreferences(
+                                        linkedPhone = normalizedPhone,
+                                        isPakistaniPro = true
+                                    )
+                                    socialViewModel.showStatus("Pakistani Pro Activated!")
+                                },
+                                onDisablePakistaniPro = {
+                                    studioViewModel.updateStudioPreferences(isPakistaniPro = false)
+                                    socialViewModel.showStatus("Switched to Free Mode (Without Pro)")
                                 },
                                 onSavePhone = { phone ->
                                     studioViewModel.updateStudioPreferences(linkedPhone = phone)
                                     socialViewModel.showStatus("Studio Phone Number Saved")
+                                },
+                                onShareApp = {
+                                    AppShareHelper.shareAppWithFriends(
+                                        context = context,
+                                        senderHandle = profile?.handle,
+                                        isPakPro = preferences.isPakistaniPro
+                                    )
+                                },
+                                onShareProfile = {
+                                    AppShareHelper.shareCreatorProfile(
+                                        context = context,
+                                        displayName = profile?.displayName ?: "s.s Creator",
+                                        handle = profile?.handle ?: "@creator",
+                                        followers = profile?.followersCount ?: 0L,
+                                        isPakPro = preferences.isPakistaniPro
+                                    )
                                 },
                                 onOpenSsAssistant = { showAssistantSheet = true },
                                 onSyncAllNow = {
@@ -469,7 +566,16 @@ fun SsAuthenticatedStudioApp(
                                     )
                                     currentHubTab = MainNavTab.FEED
                                 },
-                                onDeleteExport = { studioViewModel.deleteExport(it) }
+                                onDeleteExport = { studioViewModel.deleteExport(it) },
+                                hasAiProAccess = hasActiveAiPro,
+                                isAdminUser = isAdminUser,
+                                entitlement = myEntitlement,
+                                pendingAdminRequestsCount = pendingAdminRequestsCount,
+                                onOpenAiVideoGenPro = { showAiVideoProSheet = true },
+                                onOpenProPackages = { showProPurchaseSheet = true },
+                                onOpenAdminConsole = {
+                                    if (isAdminUser) showAdminBillingSheet = true
+                                }
                             )
                         }
                     }
@@ -494,7 +600,8 @@ fun SsAuthenticatedStudioApp(
                         currentHubTab = MainNavTab.FEED
                     },
                     onOpenAssistant = { showAssistantSheet = true },
-                    onOpenMiniGuides = { showMiniGuidesSheet = true }
+                    onOpenMiniGuides = { showMiniGuidesSheet = true },
+                    onOpenAiVideoGen = { showAiVideoProSheet = true }
                 )
             }
         }
@@ -582,6 +689,80 @@ fun SsAuthenticatedStudioApp(
                     }
                 },
                 onDismiss = { showBatchPhotoSheet = false }
+            )
+        }
+
+        if (showAiVideoProSheet) {
+            AiVideoProSheet(
+                genState = aiVideoGenState,
+                history = aiGeneratedVideos,
+                hasProAccess = hasActiveAiPro,
+                trialUsedCount = preferences.aiVideoTrialCount,
+                isAdminUser = isAdminUser,
+                onGenerate = { prompt, style, ratio ->
+                    studioViewModel.generateAiVideoFromPrompt(
+                        prompt = prompt,
+                        style = style,
+                        aspectRatio = ratio,
+                        hasProAccess = hasActiveAiPro,
+                        onRequireProPackage = { showProPurchaseSheet = true }
+                    )
+                },
+                onResetState = { studioViewModel.resetAiVideoGenState() },
+                onOpenInEditor = { result ->
+                    studioViewModel.openGeneratedVideoInEditor(result) {
+                        navController.navigate(RouteEditor) { launchSingleTop = true }
+                    }
+                },
+                onOpenProPackages = { showProPurchaseSheet = true },
+                onOpenAdminConsole = {
+                    if (isAdminUser) showAdminBillingSheet = true
+                },
+                onDismiss = { showAiVideoProSheet = false }
+            )
+        }
+
+        if (showProPurchaseSheet) {
+            ProPurchaseSheet(
+                billingConfig = billingConfig,
+                entitlement = myEntitlement,
+                hasProAccess = hasActiveAiPro,
+                myRequests = myProRequests,
+                isBusy = isSocialBusy,
+                onSubmitPayment = { tier, method, senderPhone, tid ->
+                    socialViewModel.submitProPurchaseRequest(
+                        packageTier = tier,
+                        method = method,
+                        senderPhone = senderPhone,
+                        transactionId = tid
+                    )
+                },
+                onShowMessage = { socialViewModel.showStatus(it) },
+                onDismiss = { showProPurchaseSheet = false }
+            )
+        }
+
+        if (showAdminBillingSheet && isAdminUser) {
+            AdminBillingConsoleSheet(
+                billingConfig = billingConfig,
+                allRequests = allAdminProRequests,
+                isBusy = isSocialBusy,
+                onSaveBillingConfig = { jNum, jTitle, eNum, eTitle, wPkr, mPkr, yPkr, note ->
+                    socialViewModel.saveAdminBillingConfig(
+                        jazzCashNumber = jNum,
+                        jazzCashTitle = jTitle,
+                        easyPaisaNumber = eNum,
+                        easyPaisaTitle = eTitle,
+                        weeklyPricePkr = wPkr,
+                        monthlyPricePkr = mPkr,
+                        yearlyPricePkr = yPkr,
+                        adminNote = note
+                    )
+                },
+                onReviewRequest = { req, approve, note ->
+                    socialViewModel.reviewProRequest(req, approve, note)
+                },
+                onDismiss = { showAdminBillingSheet = false }
             )
         }
         }

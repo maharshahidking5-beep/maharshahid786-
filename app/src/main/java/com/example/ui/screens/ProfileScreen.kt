@@ -2,6 +2,9 @@ package com.example.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,21 +19,28 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
@@ -38,18 +48,24 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MonetizationOn
 import androidx.compose.material.icons.filled.MovieCreation
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Publish
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.Wallpaper
+import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -71,17 +87,24 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
+import com.example.auth.AccountSecurityHelpers
+import com.example.auth.MAX_MULTI_DEVICE_LOGINS
+import com.example.auth.ProfileCustomizationCatalog
 import com.example.data.CloudSyncUiState
 import com.example.data.ExportEntity
+import com.example.data.StudioPreferences
 import com.example.media.SmartMediaHelpers
 import com.example.model.CanvaDesignDoc
 import com.example.model.CanvaProject
 import com.example.model.CloudProjectSummaryDoc
+import com.example.model.ProEntitlementDoc
+import com.example.model.ProPackageTier
 import com.example.model.SocialVideoPostDoc
 import com.example.model.UserProfileDoc
 import com.example.ui.components.CloudSyncSettingsCard
@@ -112,11 +135,13 @@ private enum class ProfileSubTab(val label: String) {
     EXPORTS("Exports")
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     profileUiState: ProfileUiState,
     profile: UserProfileDoc?,
     privateEmail: String,
+    preferences: StudioPreferences,
     linkedPhone: String,
     cloudSyncState: CloudSyncUiState,
     useTransparentBg: Boolean = false,
@@ -127,8 +152,13 @@ fun ProfileScreen(
     canvaDesigns: List<CanvaDesignDoc>,
     exports: List<ExportEntity>,
     decodeCanvaDesign: (String) -> CanvaProject?,
-    onUpdateProfile: (displayName: String, handle: String, bio: String) -> Unit,
+    onUpdateProfile: (displayName: String, handle: String, bio: String, photoUrl: String?) -> Unit,
+    onUpdateProfileCustomization: (coverStyle: String?, localPhotoUri: String?, localBannerUri: String?) -> Unit,
+    onActivatePakistaniPro: (normalizedPhone: String) -> Unit,
+    onDisablePakistaniPro: () -> Unit,
     onSavePhone: (String) -> Unit,
+    onShareApp: () -> Unit,
+    onShareProfile: () -> Unit,
     onOpenSsAssistant: () -> Unit,
     onSyncAllNow: () -> Unit,
     onToggleAutoSync: (Boolean) -> Unit,
@@ -140,6 +170,13 @@ fun ProfileScreen(
     onDeleteCanvaDesign: (String) -> Unit,
     onPublishExportToTikTok: (ExportEntity) -> Unit,
     onDeleteExport: (ExportEntity) -> Unit,
+    hasAiProAccess: Boolean = false,
+    isAdminUser: Boolean = false,
+    entitlement: ProEntitlementDoc? = null,
+    pendingAdminRequestsCount: Int = 0,
+    onOpenAiVideoGenPro: () -> Unit = {},
+    onOpenProPackages: () -> Unit = {},
+    onOpenAdminConsole: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -153,6 +190,12 @@ fun ProfileScreen(
 
     val savedPosts = remember(allFeedPosts, savedPostIds) {
         allFeedPosts.filter { savedPostIds.contains(it.id) }
+    }
+    val coverTheme = remember(preferences.profileCoverStyle) {
+        ProfileCustomizationCatalog.findCoverTheme(preferences.profileCoverStyle)
+    }
+    val registeredDevices = remember(preferences.registeredDevicesJson) {
+        AccountSecurityHelpers.decodeDevices(preferences.registeredDevicesJson)
     }
 
     LazyColumn(
@@ -178,6 +221,16 @@ fun ProfileScreen(
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
+                        onClick = onShareApp,
+                        modifier = Modifier
+                            .testTag("profile_share_app_button")
+                            .minimumInteractiveComponentSize()
+                            .clip(CircleShape)
+                            .background(StudioSurfaceElevated)
+                    ) {
+                        Icon(Icons.Filled.Share, "Share app with friends", tint = StudioAmber)
+                    }
+                    IconButton(
                         onClick = { showEditDialog = true },
                         modifier = Modifier
                             .testTag("profile_edit_button")
@@ -185,7 +238,7 @@ fun ProfileScreen(
                             .clip(CircleShape)
                             .background(StudioSurfaceElevated)
                     ) {
-                        Icon(Icons.Filled.Edit, "Edit profile", tint = ElectricCyan)
+                        Icon(Icons.Filled.Edit, "Customize profile", tint = ElectricCyan)
                     }
                     IconButton(
                         onClick = { showSignOutConfirm = true },
@@ -195,21 +248,21 @@ fun ProfileScreen(
                             .clip(CircleShape)
                             .background(StudioSurfaceElevated)
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.Logout, "Sign out", tint = NeonRose)
+                        Icon(Icons.AutoMirrored.Filled.Logout, "Sign out or switch account", tint = NeonRose)
                     }
                 }
             }
         }
 
         item {
-            // Profile Hero Card
+            // Customizable Profile Hero Card with Banner Cover + Avatar + Pakistani Pro Badge
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp),
                 color = StudioSurfaceElevated,
                 shape = RoundedCornerShape(22.dp),
-                border = BorderStroke(1.dp, StudioBorder)
+                border = BorderStroke(1.dp, Color(coverTheme.accentHex).copy(alpha = 0.55f))
             ) {
                 if (profileUiState is ProfileUiState.Loading && profile == null) {
                     Box(
@@ -222,91 +275,494 @@ fun ProfileScreen(
                     }
                 } else {
                     val p = profile ?: UserProfileDoc()
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
+                    val presetAvatar = ProfileCustomizationCatalog.findAvatarPreset(p.photoUrl)
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        // Customizable Cover Banner Strip
                         Box(
                             modifier = Modifier
-                                .size(84.dp)
-                                .clip(CircleShape)
-                                .background(Brush.linearGradient(listOf(ElectricCyan, NeonRose)))
-                                .border(2.5.dp, Color.White, CircleShape),
-                            contentAlignment = Alignment.Center
+                                .fillMaxWidth()
+                                .height(98.dp)
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(Color(coverTheme.startHex), Color(coverTheme.endHex))
+                                    )
+                                )
                         ) {
-                            if (p.photoUrl.isNotBlank()) {
+                            if (preferences.profileLocalBannerUri.isNotBlank()) {
                                 AsyncImage(
-                                    model = p.photoUrl,
-                                    contentDescription = p.displayName,
+                                    model = preferences.profileLocalBannerUri,
+                                    contentDescription = "Profile cover photo",
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize()
                                 )
-                            } else {
-                                Text(
-                                    text = p.displayName.take(1).uppercase().ifBlank { "S" },
-                                    style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.ExtraBold),
-                                    color = Color(0xFF041418)
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(Color.Black.copy(alpha = 0.28f))
                                 )
                             }
-                        }
-
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = p.displayName.ifBlank { "s.s Creator" },
-                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                                color = TextPrimary
-                            )
-                            Text(
-                                text = p.handle.ifBlank { "@creator" },
-                                style = MaterialTheme.typography.labelLarge,
-                                color = ElectricCyan
-                            )
-                        }
-
-                        if (privateEmail.isNotBlank()) {
                             Surface(
-                                color = StudioSurface,
-                                shape = RoundedCornerShape(20.dp),
-                                border = BorderStroke(1.dp, ElectricCyan.copy(alpha = 0.35f))
+                                color = Color.Black.copy(alpha = 0.55f),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(10.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable { showEditDialog = true }
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
-                                    Icon(Icons.Filled.Email, null, tint = ElectricCyan, modifier = Modifier.size(14.dp))
-                                    Text(
-                                        text = privateEmail,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = TextSecondary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                                    Icon(Icons.Filled.Edit, null, tint = ElectricCyan, modifier = Modifier.size(12.dp))
+                                    Text("Customize", style = MaterialTheme.typography.labelSmall, color = Color.White)
                                 }
                             }
                         }
 
-                        if (p.bio.isNotBlank()) {
-                            Text(
-                                text = p.bio,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = TextSecondary,
-                                textAlign = TextAlign.Center
-                            )
-                        }
-
-                        Row(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(top = 6.dp),
-                            horizontalArrangement = Arrangement.SpaceEvenly
+                                .padding(horizontal = 20.dp)
+                                .padding(bottom = 18.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            ProfileStatColumn(p.followingCount.toString(), "Following")
-                            ProfileStatColumn(p.followersCount.toString(), "Followers")
-                            ProfileStatColumn(p.likesCount.toString(), "Likes")
+                            Box(
+                                modifier = Modifier
+                                    .offset(y = (-36).dp)
+                                    .padding(bottom = 0.dp)
+                                    .size(86.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (presetAvatar != null) {
+                                            Brush.linearGradient(
+                                                listOf(Color(presetAvatar.primaryHex), Color(presetAvatar.secondaryHex))
+                                            )
+                                        } else {
+                                            Brush.linearGradient(listOf(ElectricCyan, NeonRose))
+                                        }
+                                    )
+                                    .border(3.dp, StudioSurfaceElevated, CircleShape)
+                                    .clickable { showEditDialog = true },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                when {
+                                    preferences.profileLocalPhotoUri.isNotBlank() -> {
+                                        AsyncImage(
+                                            model = preferences.profileLocalPhotoUri,
+                                            contentDescription = p.displayName,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                    presetAvatar != null -> {
+                                        Text(
+                                            text = p.displayName.take(2).uppercase().ifBlank { "SS" },
+                                            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold),
+                                            color = Color.White
+                                        )
+                                    }
+                                    p.photoUrl.isNotBlank() -> {
+                                        AsyncImage(
+                                            model = p.photoUrl,
+                                            contentDescription = p.displayName,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                    else -> {
+                                        Text(
+                                            text = p.displayName.take(1).uppercase().ifBlank { "S" },
+                                            style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.ExtraBold),
+                                            color = Color(0xFF041418)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.offset(y = (-24).dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        text = p.displayName.ifBlank { "s.s Creator" },
+                                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                        color = TextPrimary
+                                    )
+                                    if (preferences.isPakistaniPro) {
+                                        Surface(
+                                            color = StudioEmerald.copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(8.dp),
+                                            border = BorderStroke(1.dp, StudioEmerald)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                            ) {
+                                                Icon(Icons.Filled.Verified, null, tint = StudioEmerald, modifier = Modifier.size(12.dp))
+                                                Text(
+                                                    text = "PAK PRO",
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
+                                                    color = StudioEmerald
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                Text(
+                                    text = p.handle.ifBlank { "@creator" },
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = ElectricCyan
+                                )
+                            }
+
+                            if (privateEmail.isNotBlank()) {
+                                Surface(
+                                    color = StudioSurface,
+                                    shape = RoundedCornerShape(20.dp),
+                                    border = BorderStroke(1.dp, ElectricCyan.copy(alpha = 0.35f)),
+                                    modifier = Modifier.offset(y = (-14).dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(Icons.Filled.Email, null, tint = ElectricCyan, modifier = Modifier.size(14.dp))
+                                        Text(
+                                            text = privateEmail,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = TextSecondary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (p.bio.isNotBlank()) {
+                                Text(
+                                    text = p.bio,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = TextSecondary,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceEvenly
+                            ) {
+                                ProfileStatColumn(p.followingCount.toString(), "Following")
+                                ProfileStatColumn(p.followersCount.toString(), "Followers")
+                                ProfileStatColumn(p.likesCount.toString(), "Likes")
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = onShareProfile,
+                                    modifier = Modifier.weight(1f).testTag("profile_share_profile_button"),
+                                    border = BorderStroke(1.dp, ElectricCyan.copy(alpha = 0.55f)),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(Icons.Filled.Share, null, tint = ElectricCyan, modifier = Modifier.size(15.dp))
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                    Text("Share Profile", style = MaterialTheme.typography.labelMedium, color = ElectricCyan)
+                                }
+                                OutlinedButton(
+                                    onClick = onShareApp,
+                                    modifier = Modifier.weight(1f).testTag("profile_invite_friends_button"),
+                                    border = BorderStroke(1.dp, StudioAmber.copy(alpha = 0.55f)),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(Icons.Filled.Share, null, tint = StudioAmber, modifier = Modifier.size(15.dp))
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                    Text("Share App", style = MaterialTheme.typography.labelMedium, color = StudioAmber)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            // AI Video Gen Pro + JazzCash/EasyPaisa Package Card + Exclusive Admin Console Card
+            Spacer(modifier = Modifier.height(14.dp))
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .testTag("profile_ai_pro_card"),
+                color = StudioSurfaceElevated,
+                shape = RoundedCornerShape(18.dp),
+                border = BorderStroke(
+                    1.dp,
+                    if (hasAiProAccess) StudioEmerald.copy(alpha = 0.65f) else StudioAmber.copy(alpha = 0.55f)
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val activeTierTitle = entitlement?.let { ProPackageTier.fromId(it.tier).title } ?: "Monthly Creator Pro"
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                Icons.Filled.WorkspacePremium,
+                                null,
+                                tint = if (hasAiProAccess) StudioEmerald else StudioAmber,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = if (hasAiProAccess) "AI Video Pro Active" else "AI Video Gen Pro Packages",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                color = if (hasAiProAccess) StudioEmerald else TextPrimary
+                            )
+                        }
+                    }
+                    Text(
+                        text = if (hasAiProAccess) {
+                            "Plan: $activeTierTitle · Unlimited Prompt-to-Video & 1080P+ HD unlocked."
+                        } else {
+                            "Purchase Weekly / Monthly / Yearly Pro via JazzCash or EasyPaisa."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = onOpenAiVideoGenPro,
+                            modifier = Modifier.weight(1f).testTag("profile_open_ai_video_btn"),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = ElectricCyan,
+                                contentColor = Color(0xFF041418)
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Filled.AutoAwesome, null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text("AI Video Pro", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                        }
+                        OutlinedButton(
+                            onClick = onOpenProPackages,
+                            modifier = Modifier.weight(1f).testTag("profile_buy_pro_btn"),
+                            border = BorderStroke(1.dp, StudioAmber),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                        ) {
+                            Text(
+                                text = if (hasAiProAccess) "Manage Plan" else "JazzCash / EasyPaisa",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = StudioAmber
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (isAdminUser) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp)
+                        .testTag("profile_admin_console_card")
+                        .clip(RoundedCornerShape(18.dp))
+                        .clickable(onClick = onOpenAdminConsole),
+                    color = VioletPulse.copy(alpha = 0.16f),
+                    shape = RoundedCornerShape(18.dp),
+                    border = BorderStroke(1.dp, VioletPulse.copy(alpha = 0.7f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(VioletPulse.copy(alpha = 0.22f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Filled.AdminPanelSettings, null, tint = VioletPulse, modifier = Modifier.size(20.dp))
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Admin Billing Console ($pendingAdminRequestsCount Pending)",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = "Change JazzCash / EasyPaisa numbers & approve Pro orders",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Pakistani Pro (+92) vs Without Pro (Free) Card & Multi-Device (Up to 10 Mobiles) Card
+            Spacer(modifier = Modifier.height(14.dp))
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .testTag("pakistani_pro_card"),
+                color = StudioSurfaceElevated,
+                shape = RoundedCornerShape(18.dp),
+                border = BorderStroke(
+                    1.dp,
+                    if (preferences.isPakistaniPro) StudioEmerald.copy(alpha = 0.6f) else StudioBorder
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (preferences.isPakistaniPro) "Pakistani Pro Active (+92)" else "Free Mode (Without Pro)",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                color = if (preferences.isPakistaniPro) StudioEmerald else TextPrimary
+                            )
+                            Text(
+                                text = if (preferences.isPakistaniPro && linkedPhone.isNotBlank()) {
+                                    "Verified Mobile: $linkedPhone · Zero watermark & Pro perks unlocked"
+                                } else {
+                                    "No phone number required for Free mode. Add a +92 number anytime for Pakistani Pro."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { showPhoneDialog = true },
+                            modifier = Modifier.weight(1f).testTag("profile_pak_pro_button"),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = StudioEmerald,
+                                contentColor = Color(0xFF041418)
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Filled.Verified, null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (preferences.isPakistaniPro) "Update +92 Number" else "Get Pakistani Pro (+92)",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+                            )
+                        }
+                        if (preferences.isPakistaniPro) {
+                            OutlinedButton(
+                                onClick = onDisablePakistaniPro,
+                                border = BorderStroke(1.dp, StudioBorder),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                            ) {
+                                Text("Use Without Pro", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .testTag("multi_device_card"),
+                color = StudioSurfaceElevated,
+                shape = RoundedCornerShape(18.dp),
+                border = BorderStroke(1.dp, ElectricCyan.copy(alpha = 0.4f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(Icons.Filled.Devices, null, tint = ElectricCyan, modifier = Modifier.size(18.dp))
+                            Text(
+                                text = "Multi-Device Re-Login (${registeredDevices.size.coerceAtLeast(1)} / $MAX_MULTI_DEVICE_LOGINS Mobiles)",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                color = TextPrimary
+                            )
+                        }
+                    }
+                    Text(
+                        text = "This Mobile: ${registeredDevices.lastOrNull()?.deviceLabel ?: AccountSecurityHelpers.currentDeviceLabel()} · Same account works simultaneously on up to $MAX_MULTI_DEVICE_LOGINS mobiles.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { showSignOutConfirm = true },
+                            modifier = Modifier.weight(1f).testTag("profile_relogin_button"),
+                            border = BorderStroke(1.dp, ElectricCyan.copy(alpha = 0.55f)),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Text("Re-Login / Switch Account", style = MaterialTheme.typography.labelSmall, color = ElectricCyan)
+                        }
+                        OutlinedButton(
+                            onClick = onShareApp,
+                            border = BorderStroke(1.dp, StudioAmber.copy(alpha = 0.55f)),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Filled.Share, null, tint = StudioAmber, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Add Phone", style = MaterialTheme.typography.labelSmall, color = StudioAmber)
                         }
                     }
                 }
@@ -711,30 +1167,63 @@ fun ProfileScreen(
 
     if (showPhoneDialog) {
         var phoneDraft by remember(linkedPhone) { mutableStateOf(linkedPhone) }
+        var phoneError by remember { mutableStateOf<String?>(null) }
         AlertDialog(
             onDismissRequest = { showPhoneDialog = false },
             containerColor = StudioSurfaceElevated,
-            title = { Text("Link Mobile Number", color = TextPrimary) },
+            title = { Text("Pakistani Pro (+92) Activation", color = TextPrimary) },
             text = {
-                OutlinedTextField(
-                    value = phoneDraft,
-                    onValueChange = { phoneDraft = it },
-                    label = { Text("Phone number") },
-                    placeholder = { Text("+92 300 1234567") },
-                    singleLine = true
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Enter your Pakistani mobile number (+92 3XX XXXXXXX or 03XX XXXXXXX) to activate Pakistani Pro. No phone number is needed for Free mode.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+                    OutlinedTextField(
+                        value = phoneDraft,
+                        onValueChange = {
+                            phoneDraft = it
+                            phoneError = null
+                        },
+                        label = { Text("Pakistani Number (+92)") },
+                        placeholder = { Text("0300 1234567") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        singleLine = true
+                    )
+                    if (phoneError != null) {
+                        Text(
+                            text = phoneError.orEmpty(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = NeonRose
+                        )
+                    }
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    onSavePhone(phoneDraft.trim())
-                    showPhoneDialog = false
+                    val normalized = AccountSecurityHelpers.normalizePakistaniPhone(phoneDraft)
+                    if (normalized == null) {
+                        phoneError = "Enter a valid Pakistani mobile number (e.g. 0300 1234567)"
+                    } else {
+                        onSavePhone(normalized)
+                        onActivatePakistaniPro(normalized)
+                        showPhoneDialog = false
+                    }
                 }) {
-                    Text("Save", color = ElectricCyan)
+                    Text("Activate Pro", color = StudioEmerald, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showPhoneDialog = false }) {
-                    Text("Cancel", color = TextSecondary)
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = {
+                        onDisablePakistaniPro()
+                        showPhoneDialog = false
+                    }) {
+                        Text("Without Pro", color = TextSecondary)
+                    }
+                    TextButton(onClick = { showPhoneDialog = false }) {
+                        Text("Cancel", color = TextSecondary)
+                    }
                 }
             }
         )
@@ -745,31 +1234,193 @@ fun ProfileScreen(
         var name by remember(cur.displayName) { mutableStateOf(cur.displayName) }
         var handle by remember(cur.handle) { mutableStateOf(cur.handle) }
         var bio by remember(cur.bio) { mutableStateOf(cur.bio) }
-        AlertDialog(
-            onDismissRequest = { showEditDialog = false },
-            containerColor = StudioSurfaceElevated,
-            title = { Text("Edit Creator Profile", color = TextPrimary) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Display Name") }, singleLine = true)
-                    OutlinedTextField(value = handle, onValueChange = { handle = it }, label = { Text("@handle") }, singleLine = true)
-                    OutlinedTextField(value = bio, onValueChange = { bio = it }, label = { Text("Bio") })
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    onUpdateProfile(name, handle, bio)
-                    showEditDialog = false
-                }) {
-                    Text("Save", color = ElectricCyan)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showEditDialog = false }) {
-                    Text("Cancel", color = TextSecondary)
-                }
+        var selectedPhotoUrl by remember(cur.photoUrl) { mutableStateOf(cur.photoUrl) }
+        var localPhotoDraft by remember(preferences.profileLocalPhotoUri) { mutableStateOf(preferences.profileLocalPhotoUri) }
+        var localBannerDraft by remember(preferences.profileLocalBannerUri) { mutableStateOf(preferences.profileLocalBannerUri) }
+        var selectedCoverId by remember(preferences.profileCoverStyle) { mutableStateOf(preferences.profileCoverStyle) }
+
+        val avatarPicker = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.PickVisualMedia()
+        ) { uri ->
+            if (uri != null) {
+                localPhotoDraft = uri.toString()
             }
-        )
+        }
+        val bannerPicker = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.PickVisualMedia()
+        ) { uri ->
+            if (uri != null) {
+                localBannerDraft = uri.toString()
+            }
+        }
+
+        ModalBottomSheet(
+            onDismissRequest = { showEditDialog = false },
+            containerColor = StudioSurface
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Customize Creator Profile",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = TextPrimary
+                )
+
+                // Avatar Customization Row (Photo Picker + Studio Avatars)
+                Text("Profile Avatar", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            avatarPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        },
+                        border = BorderStroke(1.dp, ElectricCyan.copy(alpha = 0.6f)),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Filled.PhotoCamera, null, tint = ElectricCyan, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Gallery Photo", color = ElectricCyan)
+                    }
+                    if (localPhotoDraft.isNotBlank()) {
+                        TextButton(onClick = { localPhotoDraft = "" }) {
+                            Text("Use Studio Badge", color = TextSecondary)
+                        }
+                    }
+                }
+
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(ProfileCustomizationCatalog.avatarPresets, key = { it.id }) { preset ->
+                        val active = localPhotoDraft.isBlank() && selectedPhotoUrl == preset.tokenUrl
+                        Surface(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(14.dp))
+                                .clickable {
+                                    localPhotoDraft = ""
+                                    selectedPhotoUrl = preset.tokenUrl
+                                },
+                            color = if (active) Color(preset.primaryHex).copy(alpha = 0.2f) else StudioSurfaceElevated,
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, if (active) Color(preset.primaryHex) else StudioBorder)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(10.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            Brush.linearGradient(
+                                                listOf(Color(preset.primaryHex), Color(preset.secondaryHex))
+                                            )
+                                        )
+                                )
+                                Text(preset.label, style = MaterialTheme.typography.labelSmall, color = TextPrimary)
+                            }
+                        }
+                    }
+                }
+
+                // Cover Banner Customization
+                Text("Profile Cover Banner", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            bannerPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        },
+                        border = BorderStroke(1.dp, NeonRose.copy(alpha = 0.6f)),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Filled.Wallpaper, null, tint = NeonRose, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Pick Cover Photo", color = NeonRose)
+                    }
+                    if (localBannerDraft.isNotBlank()) {
+                        TextButton(onClick = { localBannerDraft = "" }) {
+                            Text("Reset Gradient", color = TextSecondary)
+                        }
+                    }
+                }
+
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(ProfileCustomizationCatalog.coverThemes, key = { it.id }) { theme ->
+                        val active = selectedCoverId == theme.id && localBannerDraft.isBlank()
+                        Surface(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    localBannerDraft = ""
+                                    selectedCoverId = theme.id
+                                },
+                            color = Color(theme.startHex),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.5.dp, if (active) Color(theme.accentHex) else StudioBorder)
+                        ) {
+                            Text(
+                                text = theme.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (active) Color(theme.accentHex) else TextPrimary,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                            )
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Display Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = handle,
+                    onValueChange = { handle = it },
+                    label = { Text("Creator @username") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = bio,
+                    onValueChange = { bio = it },
+                    label = { Text("Bio") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Button(
+                    onClick = {
+                        onUpdateProfile(name, handle, bio, selectedPhotoUrl)
+                        onUpdateProfileCustomization(selectedCoverId, localPhotoDraft, localBannerDraft)
+                        showEditDialog = false
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
+                        .testTag("profile_save_customization_button"),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = ElectricCyan,
+                        contentColor = Color(0xFF041418)
+                    )
+                ) {
+                    Text("Save Custom Profile", fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(14.dp))
+            }
+        }
     }
 
     if (showSignOutConfirm) {

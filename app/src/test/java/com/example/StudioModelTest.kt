@@ -22,10 +22,23 @@ import com.example.model.VideoClip
 import com.example.model.VideoEffectPreset
 import com.example.model.VoiceEnhancePreset
 import com.example.model.VoiceEnhanceSettings
+import com.example.ai.AiVideoVisualStyle
+import com.example.auth.AccountSecurityHelpers
+import com.example.model.BillingConfigDoc
+import com.example.model.PakistanPaymentMethod
+import com.example.model.ProPackageTier
+import com.example.model.STUDIO_ADMIN_EMAIL
+import com.example.model.isStudioAdminEmail
+import com.example.auth.AppShareHelper
+import com.example.auth.MAX_MULTI_DEVICE_LOGINS
+import com.example.auth.ProfileCustomizationCatalog
+import com.example.auth.SS_SHARED_APP_URL
 import com.example.ui.components.formatShortDuration
 import com.example.ui.components.formatTimecode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -184,5 +197,85 @@ class StudioModelTest {
         assertTrue(rtlTitle.isRtl && rtlTitle.isCurved && rtlTitle.is3D && rtlTitle.isNeonGlow)
         assertEquals("Not synced yet", NetworkAndPowerObserver.formatLastSyncedTime(0L))
         assertEquals(CloudSyncStatus.IDLE, CloudSyncUiState().status)
+    }
+
+    @Test
+    fun `pakistani pro phone validation normalizes valid numbers and rejects invalid ones`() {
+        assertEquals("+92 300 1234567", AccountSecurityHelpers.normalizePakistaniPhone("03001234567"))
+        assertEquals("+92 312 9876543", AccountSecurityHelpers.normalizePakistaniPhone("+92 312 9876543"))
+        assertEquals("+92 345 1122334", AccountSecurityHelpers.normalizePakistaniPhone("923451122334"))
+        assertEquals("+92 333 4455667", AccountSecurityHelpers.normalizePakistaniPhone("3334455667"))
+        assertNull(AccountSecurityHelpers.normalizePakistaniPhone("04212345678"))
+        assertNull(AccountSecurityHelpers.normalizePakistaniPhone("12345"))
+    }
+
+    @Test
+    fun `sign up gmail username password hashing and 10 device session cap work reliably`() {
+        assertTrue(AccountSecurityHelpers.isValidGmailOrEmail("creator.pk@gmail.com"))
+        assertFalse(AccountSecurityHelpers.isValidGmailOrEmail("not-an-email"))
+
+        assertEquals("@ss_creator", AccountSecurityHelpers.normalizeUsername("  ss_creator! "))
+        assertTrue(AccountSecurityHelpers.isValidUsername("ali_khan"))
+        assertFalse(AccountSecurityHelpers.isValidUsername("a"))
+
+        assertTrue(AccountSecurityHelpers.isValidPassword("studio99"))
+        assertFalse(AccountSecurityHelpers.isValidPassword("12345"))
+
+        val (hash, salt) = AccountSecurityHelpers.hashStudioPassword("studio99")
+        assertTrue(AccountSecurityHelpers.verifyStudioPassword("studio99", hash, salt))
+        assertFalse(AccountSecurityHelpers.verifyStudioPassword("wrongpass", hash, salt))
+
+        var devicesJson = ""
+        repeat(12) { idx ->
+            devicesJson = AccountSecurityHelpers.registerDeviceInList(
+                existingJson = devicesJson,
+                deviceId = "dev_$idx",
+                deviceLabel = "Mobile $idx",
+                nowMs = 1000L + idx
+            )
+        }
+        val decoded = AccountSecurityHelpers.decodeDevices(devicesJson)
+        assertEquals(MAX_MULTI_DEVICE_LOGINS, decoded.size)
+        assertTrue(decoded.any { it.deviceId == "dev_11" })
+        assertFalse(decoded.any { it.deviceId == "dev_0" })
+    }
+
+    @Test
+    fun `profile customization catalog and friend share message contain expected data`() {
+        assertEquals(6, ProfileCustomizationCatalog.avatarPresets.size)
+        assertEquals(6, ProfileCustomizationCatalog.coverThemes.size)
+        assertNotNull(ProfileCustomizationCatalog.findAvatarPreset("ss://avatar/pak_pro"))
+
+        val shareMessage = AppShareHelper.buildAppShareMessage(senderHandle = "@sara_edits", isPakPro = true)
+        assertTrue(shareMessage.contains(SS_SHARED_APP_URL))
+        assertTrue(shareMessage.contains("@sara_edits"))
+        assertTrue(shareMessage.contains("Pakistani Pro"))
+        assertTrue(shareMessage.contains("10 mobile devices"))
+    }
+
+    @Test
+    fun `admin email check and jazzcash easypaisa billing packages resolve accurately`() {
+        assertTrue(isStudioAdminEmail(STUDIO_ADMIN_EMAIL))
+        assertTrue(isStudioAdminEmail("  MOMILOVEYOUSOMUCH7@GMAIL.COM "))
+        assertFalse(isStudioAdminEmail("random.creator@gmail.com"))
+        assertFalse(isStudioAdminEmail(null))
+
+        val cfg = BillingConfigDoc(
+            jazzCashNumber = "+92 301 5556677",
+            jazzCashTitle = "Admin Jazz",
+            easyPaisaNumber = "+92 345 8889900",
+            easyPaisaTitle = "Admin Easy",
+            weeklyPricePkr = 350L,
+            monthlyPricePkr = 999L,
+            yearlyPricePkr = 2999L
+        )
+        assertEquals(350L, cfg.priceFor(ProPackageTier.WEEKLY_PRO))
+        assertEquals(999L, cfg.priceFor(ProPackageTier.MONTHLY_PRO))
+        assertEquals(2999L, cfg.priceFor(ProPackageTier.YEARLY_PRO))
+        assertEquals("+92 301 5556677", cfg.numberFor(PakistanPaymentMethod.JAZZCASH))
+        assertEquals("Admin Easy", cfg.titleFor(PakistanPaymentMethod.EASYPAISA))
+        assertEquals(ProPackageTier.WEEKLY_PRO, ProPackageTier.fromId("WEEKLY_PRO"))
+        assertEquals(PakistanPaymentMethod.EASYPAISA, PakistanPaymentMethod.fromId("EASYPAISA"))
+        assertTrue(AiVideoVisualStyle.entries.size >= 6)
     }
 }

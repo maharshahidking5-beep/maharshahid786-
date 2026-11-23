@@ -88,7 +88,8 @@ fun AiLabPanel(
     onRunAiCaptions: (String) -> Unit,
     onApplyAiCaptions: (AiCaptionPack) -> Unit,
     onStreamAiScript: (String, String) -> Unit,
-    onResetAiState: () -> Unit
+    onResetAiState: () -> Unit,
+    onOpenAiVideoGen: () -> Unit = {}
 ) {
     var mode by remember { mutableStateOf(AiLabMode.ENHANCE) }
     var promptInput by remember { mutableStateOf("") }
@@ -102,6 +103,22 @@ fun AiLabPanel(
             .padding(horizontal = 16.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        Button(
+            onClick = onOpenAiVideoGen,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("ailab_open_ai_video_gen"),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = ElectricCyan,
+                contentColor = Color(0xFF041418)
+            )
+        ) {
+            Icon(Icons.Filled.AutoAwesome, null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("AI Video Gen Pro (Prompt to Video)", fontWeight = FontWeight.ExtraBold)
+        }
+
         // Quick 1080P+ Auto Enhance Banner + Mode Selector
         Row(
             modifier = Modifier.fillMaxWidth(),

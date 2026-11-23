@@ -110,7 +110,15 @@ data class StudioPreferences(
     val appThemeMode: String = "dark",
     val customBgUri: String = "",
     val customBgBlur: Float = 2f,
-    val linkedPhone: String = ""
+    val linkedPhone: String = "",
+    val isPakistaniPro: Boolean = false,
+    val profileCoverStyle: String = "CYBER_CYAN",
+    val profileLocalPhotoUri: String = "",
+    val profileLocalBannerUri: String = "",
+    val studioPasswordHash: String = "",
+    val studioPasswordSalt: String = "",
+    val registeredDevicesJson: String = "[]",
+    val aiVideoTrialCount: Int = 0
 )
 
 class StudioRepository(
@@ -144,7 +152,15 @@ class StudioRepository(
             appThemeMode = prefs[KEY_THEME_MODE] ?: "dark",
             customBgUri = prefs[KEY_CUSTOM_BG_URI] ?: "",
             customBgBlur = prefs[KEY_CUSTOM_BG_BLUR] ?: 2f,
-            linkedPhone = prefs[KEY_LINKED_PHONE] ?: ""
+            linkedPhone = prefs[KEY_LINKED_PHONE] ?: "",
+            isPakistaniPro = prefs[KEY_IS_PAKISTANI_PRO] ?: false,
+            profileCoverStyle = prefs[KEY_PROFILE_COVER_STYLE] ?: "CYBER_CYAN",
+            profileLocalPhotoUri = prefs[KEY_PROFILE_LOCAL_PHOTO] ?: "",
+            profileLocalBannerUri = prefs[KEY_PROFILE_LOCAL_BANNER] ?: "",
+            studioPasswordHash = prefs[KEY_STUDIO_PWD_HASH] ?: "",
+            studioPasswordSalt = prefs[KEY_STUDIO_PWD_SALT] ?: "",
+            registeredDevicesJson = prefs[KEY_REGISTERED_DEVICES] ?: "[]",
+            aiVideoTrialCount = prefs[KEY_AI_VIDEO_TRIALS] ?: 0
         )
     }
 
@@ -192,7 +208,15 @@ class StudioRepository(
         appThemeMode: String? = null,
         customBgUri: String? = null,
         customBgBlur: Float? = null,
-        linkedPhone: String? = null
+        linkedPhone: String? = null,
+        isPakistaniPro: Boolean? = null,
+        profileCoverStyle: String? = null,
+        profileLocalPhotoUri: String? = null,
+        profileLocalBannerUri: String? = null,
+        studioPasswordHash: String? = null,
+        studioPasswordSalt: String? = null,
+        registeredDevicesJson: String? = null,
+        aiVideoTrialCount: Int? = null
     ) {
         context.studioDataStore.edit { prefs ->
             defaultResolution?.let { prefs[KEY_DEFAULT_RES] = it.name }
@@ -206,6 +230,14 @@ class StudioRepository(
             customBgUri?.let { prefs[KEY_CUSTOM_BG_URI] = it }
             customBgBlur?.let { prefs[KEY_CUSTOM_BG_BLUR] = it }
             linkedPhone?.let { prefs[KEY_LINKED_PHONE] = it }
+            isPakistaniPro?.let { prefs[KEY_IS_PAKISTANI_PRO] = it }
+            profileCoverStyle?.let { prefs[KEY_PROFILE_COVER_STYLE] = it }
+            profileLocalPhotoUri?.let { prefs[KEY_PROFILE_LOCAL_PHOTO] = it }
+            profileLocalBannerUri?.let { prefs[KEY_PROFILE_LOCAL_BANNER] = it }
+            studioPasswordHash?.let { prefs[KEY_STUDIO_PWD_HASH] = it }
+            studioPasswordSalt?.let { prefs[KEY_STUDIO_PWD_SALT] = it }
+            registeredDevicesJson?.let { prefs[KEY_REGISTERED_DEVICES] = it }
+            aiVideoTrialCount?.let { prefs[KEY_AI_VIDEO_TRIALS] = it }
         }
     }
 
@@ -221,5 +253,13 @@ class StudioRepository(
         private val KEY_CUSTOM_BG_URI = stringPreferencesKey("custom_bg_uri")
         private val KEY_CUSTOM_BG_BLUR = floatPreferencesKey("custom_bg_blur")
         private val KEY_LINKED_PHONE = stringPreferencesKey("linked_phone")
+        private val KEY_IS_PAKISTANI_PRO = booleanPreferencesKey("is_pakistani_pro")
+        private val KEY_PROFILE_COVER_STYLE = stringPreferencesKey("profile_cover_style")
+        private val KEY_PROFILE_LOCAL_PHOTO = stringPreferencesKey("profile_local_photo")
+        private val KEY_PROFILE_LOCAL_BANNER = stringPreferencesKey("profile_local_banner")
+        private val KEY_STUDIO_PWD_HASH = stringPreferencesKey("studio_pwd_hash")
+        private val KEY_STUDIO_PWD_SALT = stringPreferencesKey("studio_pwd_salt")
+        private val KEY_REGISTERED_DEVICES = stringPreferencesKey("registered_devices_json")
+        private val KEY_AI_VIDEO_TRIALS = intPreferencesKey("ai_video_trials_used")
     }
 }

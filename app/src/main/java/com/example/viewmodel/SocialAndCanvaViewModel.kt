@@ -7,14 +7,22 @@ import com.example.data.CloudSocialRepository
 import com.example.data.CloudSyncStatus
 import com.example.data.CloudSyncUiState
 import com.example.data.NetworkAndPowerObserver
+import com.example.model.BillingConfigDoc
 import com.example.model.CanvaDesignDoc
 import com.example.model.CanvaProject
 import com.example.model.CloudProjectSummaryDoc
+import com.example.model.PakistanPaymentMethod
 import com.example.model.PostCommentDoc
+import com.example.model.ProEntitlementDoc
+import com.example.model.ProPackageTier
+import com.example.model.ProPurchaseRequestDoc
 import com.example.model.ProjectData
 import com.example.model.SocialVideoPostDoc
 import com.example.model.UserProfileDoc
+import com.example.model.isStudioAdminEmail
+import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -25,6 +33,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -88,6 +97,25 @@ class SocialAndCanvaViewModel(
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _billingConfig = MutableStateFlow(BillingConfigDoc())
+    val billingConfig: StateFlow<BillingConfigDoc> = _billingConfig.asStateFlow()
+
+    private val _myEntitlement = MutableStateFlow<ProEntitlementDoc?>(null)
+    val myEntitlement: StateFlow<ProEntitlementDoc?> = _myEntitlement.asStateFlow()
+
+    private val _myProRequests = MutableStateFlow<List<ProPurchaseRequestDoc>>(emptyList())
+    val myProRequests: StateFlow<List<ProPurchaseRequestDoc>> = _myProRequests.asStateFlow()
+
+    private val _allAdminProRequests = MutableStateFlow<List<ProPurchaseRequestDoc>>(emptyList())
+    val allAdminProRequests: StateFlow<List<ProPurchaseRequestDoc>> = _allAdminProRequests.asStateFlow()
+
+    val isAdminUser: Boolean
+        get() = isStudioAdminEmail(Firebase.auth.currentUser?.email)
+
+    val hasActiveAiPro: StateFlow<Boolean> = _myEntitlement
+        .map { ent -> isAdminUser || ent?.status == "ACTIVE" }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), isAdminUser)
 
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
@@ -206,6 +234,35 @@ class SocialAndCanvaViewModel(
                     }
                 }
         }
+
+        viewModelScope.launch {
+            repo.observeBillingConfig()
+                .catch { unwrapStreamError(it) }
+                .collect { _billingConfig.value = it }
+        }
+
+        viewModelScope.launch {
+            repo.observeMyProEntitlement(currentUserId)
+                .catch { unwrapStreamError(it) }
+                .collect { _myEntitlement.value = it }
+        }
+
+        viewModelScope.launch {
+            repo.observeMyProRequests(currentUserId)
+                .catch { unwrapStreamError(it) }
+                .collect { _myProRequests.value = it }
+        }
+
+        if (isAdminUser) {
+            viewModelScope.launch {
+                repo.ensureBillingConfigInitializedByAdmin()
+            }
+            viewModelScope.launch {
+                repo.observeAllProRequestsForAdmin()
+                    .catch { unwrapStreamError(it) }
+                    .collect { _allAdminProRequests.value = it }
+            }
+        }
     }
 
     private fun observeConnectivityAndSync() {
@@ -285,7 +342,11 @@ class SocialAndCanvaViewModel(
         _statusMessage.value = message
     }
 
-    fun ensureProfileAndSeed(user: FirebaseUser) {
+    fun ensureProfileAndSeed(
+        user: FirebaseUser,
+        pendingSignUp: com.example.auth.PendingSignUpProfile? = null,
+        onSignUpConsumed: () -> Unit = {}
+    ) {
         if (user.email?.isNotBlank() == true && _privateEmail.value.isBlank()) {
             _privateEmail.value = user.email.orEmpty()
         }
@@ -295,14 +356,36 @@ class SocialAndCanvaViewModel(
                 val msg = res.exceptionOrNull()?.localizedMessage ?: "Failed syncing Google profile"
                 _profileUiState.value = ProfileUiState.Error(msg)
                 _statusMessage.value = msg
+            } else if (pendingSignUp != null) {
+                val desiredHandle = pendingSignUp.username.ifBlank { "@creator" }
+                val desiredName = pendingSignUp.displayName.ifBlank {
+                    desiredHandle.removePrefix("@").replaceFirstChar { it.uppercase() }
+                }
+                val bioText = if (pendingSignUp.wantsPakistaniPro) {
+                    "Pakistani Pro Creator · Editing with s.s Studio Pro"
+                } else {
+                    "Creating reels & posters on s.s Studio"
+                }
+                repo.updateUserProfile(
+                    displayName = desiredName,
+                    handle = desiredHandle,
+                    bio = bioText
+                )
+                onSignUpConsumed()
             }
         }
     }
 
-    fun updateProfile(displayName: String, handle: String, bio: String, onDone: () -> Unit = {}) {
+    fun updateProfile(
+        displayName: String,
+        handle: String,
+        bio: String,
+        photoUrl: String? = null,
+        onDone: () -> Unit = {}
+    ) {
         viewModelScope.launch {
             _isBusy.value = true
-            val res = repo.updateUserProfile(displayName, handle, bio)
+            val res = repo.updateUserProfile(displayName, handle, bio, photoUrl)
             _isBusy.value = false
             if (res.isSuccess) {
                 _statusMessage.value = "Creator profile updated"
@@ -550,6 +633,110 @@ class SocialAndCanvaViewModel(
                     )
                 }
                 _statusMessage.value = firstError
+            }
+        }
+    }
+
+    // ==========================================
+    // JAZZCASH / EASYPAISA PACKAGES & ADMIN ACTIONS
+    // ==========================================
+
+    fun saveAdminBillingConfig(
+        jazzCashNumber: String,
+        jazzCashTitle: String,
+        easyPaisaNumber: String,
+        easyPaisaTitle: String,
+        weeklyPricePkr: Long,
+        monthlyPricePkr: Long,
+        yearlyPricePkr: Long,
+        adminNote: String,
+        onSaved: () -> Unit = {}
+    ) {
+        if (!isAdminUser) {
+            _statusMessage.value = "Only the Admin app can change merchant payout numbers."
+            return
+        }
+        viewModelScope.launch {
+            _isBusy.value = true
+            val res = repo.saveBillingConfigByAdmin(
+                BillingConfigDoc(
+                    jazzCashNumber = jazzCashNumber,
+                    jazzCashTitle = jazzCashTitle,
+                    easyPaisaNumber = easyPaisaNumber,
+                    easyPaisaTitle = easyPaisaTitle,
+                    weeklyPricePkr = weeklyPricePkr,
+                    monthlyPricePkr = monthlyPricePkr,
+                    yearlyPricePkr = yearlyPricePkr,
+                    adminNote = adminNote
+                )
+            )
+            _isBusy.value = false
+            if (res.isSuccess) {
+                _statusMessage.value = "JazzCash & EasyPaisa Admin numbers updated live!"
+                onSaved()
+            } else {
+                _statusMessage.value = res.exceptionOrNull()?.localizedMessage ?: "Could not save Admin numbers"
+            }
+        }
+    }
+
+    fun submitProPurchaseRequest(
+        packageTier: ProPackageTier,
+        method: PakistanPaymentMethod,
+        senderPhone: String,
+        transactionId: String,
+        onSubmitted: () -> Unit = {}
+    ) {
+        val curProfile = _profile.value ?: UserProfileDoc(userId = currentUserId)
+        val buyerEmail = _privateEmail.value.ifBlank {
+            Firebase.auth.currentUser?.email.orEmpty()
+        }
+        viewModelScope.launch {
+            _isBusy.value = true
+            val res = repo.submitProPurchaseRequest(
+                profile = curProfile,
+                buyerEmail = buyerEmail,
+                packageTier = packageTier,
+                billingConfig = _billingConfig.value,
+                method = method,
+                senderPhoneRaw = senderPhone,
+                transactionIdRaw = transactionId
+            )
+            _isBusy.value = false
+            if (res.isSuccess) {
+                _statusMessage.value = "${method.displayName} payment submitted for Admin approval!"
+                onSubmitted()
+            } else {
+                _statusMessage.value = res.exceptionOrNull()?.localizedMessage ?: "Submission failed"
+            }
+        }
+    }
+
+    fun reviewProRequest(
+        request: ProPurchaseRequestDoc,
+        approve: Boolean,
+        adminNote: String = ""
+    ) {
+        if (!isAdminUser) {
+            _statusMessage.value = "Admin privileges required."
+            return
+        }
+        viewModelScope.launch {
+            _isBusy.value = true
+            val res = repo.reviewProPurchaseRequestByAdmin(
+                request = request,
+                approve = approve,
+                adminNote = adminNote
+            )
+            _isBusy.value = false
+            if (res.isSuccess) {
+                _statusMessage.value = if (approve) {
+                    "Approved ${request.packageTitle} for ${request.buyerHandle}"
+                } else {
+                    "Rejected request ${request.transactionId}"
+                }
+            } else {
+                _statusMessage.value = res.exceptionOrNull()?.localizedMessage ?: "Review action failed"
             }
         }
     }
